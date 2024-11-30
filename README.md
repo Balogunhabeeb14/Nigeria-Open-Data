@@ -38,7 +38,7 @@ The platform enables users to search for and access a wide range of publicly ava
   Data on staff numbers, pay, local councillors, and department business plans.
 
 - **Government Spending**  
-  Includes all payments by government departments exceeding ₦25,000.
+  Includes all payments by government departments.
 
 - **Health**  
   Find information on smoking, drugs, alcohol, medicine performance, and hospitals.
