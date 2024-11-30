@@ -4,6 +4,9 @@ Nigeria-Open-Data publishes and sources updated and historical data from newspap
 
 The platform enables users to search for and access a wide range of publicly available datasets across various topics. From business and economy to transport and society, the data aims to empower individuals, organizations, and developers with the resources they need for informed decision-making and innovation.
 
+----
+
+![Nigeria Open Data](./src/img/screenshot.jpeg)
 
 ---
 
