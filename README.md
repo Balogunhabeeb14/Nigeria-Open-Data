@@ -90,4 +90,4 @@ We welcome contributions to improve the platform!
 ## **Contact**
 
 For inquiries, feedback, or support:  
-📧 **[support@Nigeriapendata.gov.ng](mailto:hab31794@gmail.com)**
+📧 **[support@Nigeriaopendata.gov.ng](mailto:hab31794@gmail.com)**
