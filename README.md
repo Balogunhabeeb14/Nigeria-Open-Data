@@ -1,97 +1,108 @@
-# **Nigeria-Open-Data**
+# Nigeria Open Data Platform
 
-Nigeria-Open-Data publishes and sources updated and historical data from newspapers, websites, and other sources, providing government, local authorities, and public data to help you build products and services.
-
-The platform enables users to search for and access a wide range of publicly available datasets across various topics. From business and economy to transport and society, the data aims to empower individuals, organizations, and developers with the resources they need for informed decision-making and innovation.
-
-----
-
-![Nigeria Open Data](./src/img/screenshot.jpeg)
+An enterprise-grade, high-performance, and scalable Open Data Portal designed to serve verified government, demographic, and economic public datasets. Built with a robust hybrid architecture connecting a modern **Next.js 15 App Router** frontend to a distributed **CKAN** metadata catalogue and PostgreSQL DataStore.
 
 ---
 
-## **Features**
-- **Search Functionality**: Quickly locate datasets through a powerful search engine.
-- **Wide Range of Topics**: Explore data across multiple domains such as crime, environment, health, and transport.
-- **Comprehensive Dataset Library**: Access trusted and up-to-date data from government and public bodies.
-- **Data for Everyone**: Whether you’re a developer, researcher, policymaker, or curious citizen, find the data you need.
+## System Architecture
+
+```mermaid
+graph TD
+    User[User Browser] <--> |Next.js 15 / React Server Components| Frontend[Next.js App Router]
+    Frontend <--> |REST API / ISR Cache| CKAN[CKAN Portal Engine]
+    Pipeline[Python Ingestion Pipeline] --> |DataStore API / ckanapi| CKAN
+    CKAN <--> Solr[Apache Solr Search Index]
+    CKAN <--> DB[(PostgreSQL Metadata & DataStore)]
+```
+
+- **Frontend Core**: React 19, Next.js 15, TypeScript, Tailwind CSS, Lucide Icons.
+- **Backend / Catalog Engine**: CKAN API Core, powered by Docker-orchestrated Solr and PostgreSQL.
+- **Data Ingest & Ingestion Pipeline**: Python 3, Pandas, and `ckanapi` implementing a strict Common Data Model (CDM) structure.
 
 ---
 
-## **Data Topics**
-- **Business and Economy**  
-  Data on small businesses, industry, imports, exports, and trade.
+## Features
 
-- **Crime and Justice**  
-  Information on courts, police, prisons, offenders, borders, and immigration.
-
-- **Defence**  
-  Includes data on armed forces, health and safety, and search and rescue operations.
-
-- **Education**  
-  Covers students, training, qualifications, and the National Curriculum.
-
-- **Environment**  
-  Explore data on weather, flooding, rivers, air quality, geology, and agriculture.
-
-- **Government**  
-  Data on staff numbers, pay, local councillors, and department business plans.
-
-- **Government Spending**  
-  Includes all payments by government departments.
-
-- **Health**  
-  Find information on smoking, drugs, alcohol, medicine performance, and hospitals.
-
-- **Mapping**  
-  Access data on addresses, boundaries, land ownership, aerial photographs, seabed, and land terrain.
-
-- **Society**  
-  Data related to employment, benefits, household finances, poverty, and population.
-
-- **Towns and Cities**  
-  Includes data on housing, urban planning, leisure, waste, and energy consumption.
-
-- **Transport**  
-  Covers airports, roads, freight, electric vehicles, parking, buses, and footpaths.
-
-- **Digital Service Performance**  
-  Track cost, usage, completion rate, digital take-up, and satisfaction metrics.
-
-- **Government Reference Data**  
-  Trusted datasets referenced and shared across government departments.
+- **Dynamic Search & Filtering**: Client-side interactive dataset searching with full-text indexing, combined with multi-category filters (Topics, File Formats, and Publishers).
+- **Topic-Based Organization**: Real-time group categorization (e.g., Business, Crime & Justice, Health, Education, Environment, Population) pulled dynamically from the CKAN API with dataset counter badges.
+- **Common Data Model Ingestion**: Automated Python script (`Data/ingest.py`) that sanitizes, standardizes, and uploads local files into CKAN's PostgreSQL database.
+- **File Downloads**: Single-click downloads that seamlessly request data files directly from the CKAN storage system.
 
 ---
 
-## **Getting Started**
+## Getting Started
 
-### **Search for Data**
-1. Use the **search bar** to find datasets relevant to your needs.
-2. Filter datasets by topics or categories for more specific results.
+### Prerequisites
 
-### **Use the Data**
-- Download datasets in accessible formats such as **CSV**, **Excel**, or **JSON**.
-- Utilize datasets to create innovative products, conduct research, or support policy development.
-
----
-
-## **Contributing**
-
-We welcome contributions to improve the platform!
-
-1. **Fork** the repository.
-2. **Make your changes** and submit a **pull request**.
-3. Describe your updates clearly for review.
+Before running the application, make sure you have the following installed:
+- **Node.js 18+** & **npm**
+- **Docker** & **Docker Compose**
+- **Python 3.10+** (for running the data ingestion pipeline)
 
 ---
 
-## **License**
+### 🔧 Configuration
 
+1. Create a `.env` file in the root directory (based on `.env.example` if available).
+2. Set the CKAN variables:
 
+```env
+CKAN_URL=http://localhost:5000
+NEXT_PUBLIC_CKAN_URL=http://localhost:5000
+CKAN_API_KEY=your_ckan_admin_api_token
+CKAN_ORG_ID=nigeriaopendata
+```
 
 ---
 
-## **Contact**
+### Running the System
 
-For inquiries, feedback, or support:  
-📧 **[support@Nigeriaopendata.gov.ng](mailto:hab31794@gmail.com)**
+#### 1. Spin up the CKAN infrastructure
+Launch PostgreSQL, Solr, and the CKAN application server via Docker:
+```bash
+docker-compose up -d
+```
+
+#### 2. Run the Ingestion Pipeline
+To ingest the default datasets from the `Data/` folder into the database:
+1. Navigate to the `Data/` folder.
+2. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the ingestion pipeline script:
+   ```bash
+   python ingest.py
+   ```
+
+#### 3. Start the Next.js Frontend
+Start the local development server:
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser to view the application.
+
+---
+
+## Development & Production Builds
+
+### Run TypeScript & ESLint Checks
+```bash
+npm run lint
+```
+
+### Build for Production
+To generate an optimized production bundle with full Incremental Static Regeneration (ISR):
+```bash
+npm run build
+```
+
+---
+
+## Common Data Model (CDM) Standards
+
+The ingestion pipeline (`Data/ingest.py`) enforces high-quality standardizations:
+- Strips trailing whitespaces and transforms all CSV columns to `lowercase_with_underscores`.
+- Fills missing values with standard default placeholders (`N/A`).
+- Formats geographic and numerical fields into consistent text rows before uploading to the DataStore.

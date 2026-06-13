@@ -1,0 +1,49 @@
+version: '3'
+
+volumes:
+  ckan_storage:
+  pg_data:
+  solr_data:
+
+services:
+  ckan:
+    image: ckan/ckan-base:2.10.4
+    container_name: ckan_app
+    ports:
+      - "5000:5000"
+    environment:
+      - CKAN_SQLALCHEMY_URL=postgresql://ckan:ckan@db/ckan
+      - CKAN_DATASTORE_WRITE_URL=postgresql://ckan:ckan@db/datastore
+      - CKAN_DATASTORE_READ_URL=postgresql://datastore_ro:datastore@db/datastore
+      - CKAN_SOLR_URL=http://solr:8983/solr/ckan
+      - CKAN_REDIS_URL=redis://redis:6379/1
+      - CKAN_SITE_URL=http://localhost:5000
+    depends_on:
+      - db
+      - solr
+      - redis
+    volumes:
+      - ckan_storage:/var/lib/ckan
+
+  db:
+    image: postgres:15-alpine
+    container_name: ckan_db
+    environment:
+      - POSTGRES_USER=ckan
+      - POSTGRES_PASSWORD=ckan
+      - POSTGRES_DB=ckan
+      - DS_RO_PASS=datastore
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  solr:
+    image: ckan/ckan-solr:2.10-solr9
+    container_name: ckan_solr
+    volumes:
+      - solr_data:/var/solr
+
+  redis:
+    image: redis:alpine
+    container_name: ckan_redis
