@@ -18,6 +18,14 @@ The platform enables users to search for and access a wide range of publicly ava
 
 ---
 
+## **Built With**
+- **Frontend & App Router**: [Next.js 15](https://nextjs.org/) (TypeScript, React 19)
+- **Data Processing & Pipelines**: [Python 3](https://www.python.org/) (Pandas, ckanapi client)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Infrastructure & Containerization**: Docker, Docker Compose, PostgreSQL (DataStore database), Apache Solr, Redis.
+
+---
+
 ## **Data Topics**
 - **Business and Economy**  
   Data on small businesses, industry, imports, exports, and trade.
@@ -75,6 +83,55 @@ The platform enables users to search for and access a wide range of publicly ava
 
 ---
 
+## **System Architecture**
+
+```mermaid
+graph TD
+    User[User Browser] <--> |Next.js 15 / React Server Components| Frontend[Next.js App Router]
+    Frontend <--> |REST API / ISR Cache| CKAN[CKAN Portal Engine]
+    Pipeline[Python Ingestion Pipeline] --> |DataStore API / ckanapi| CKAN
+    CKAN <--> Solr[Apache Solr Search Index]
+    CKAN <--> DB[(PostgreSQL Metadata & DataStore)]
+```
+
+---
+
+## **Installation & Local Setup**
+
+### **1. Configure Environment**
+Create a `.env` file in the root directory:
+```env
+CKAN_URL=http://localhost:5000
+NEXT_PUBLIC_CKAN_URL=http://localhost:5000
+CKAN_API_KEY=your_ckan_admin_api_token
+CKAN_ORG_ID=nigeriaopendata
+```
+
+### **2. Run Infrastructure (Docker)**
+Spin up the PostgreSQL databases, Solr indexer, and CKAN application:
+```bash
+docker-compose up -d
+```
+
+### **3. Import Data (Python Pipeline)**
+Run the Python Common Data Model (CDM) ingestion script to populate datasets:
+```bash
+cd Data
+pip install -r requirements.txt
+python ingest.py
+```
+
+### **4. Launch Frontend App (Next.js)**
+Run the development environment locally:
+```bash
+# Return to root directory
+npm install
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) to view the portal.
+
+---
+
 ## **Contributing**
 
 We welcome contributions to improve the platform!
@@ -87,7 +144,7 @@ We welcome contributions to improve the platform!
 
 ## **License**
 
-
+This platform and its original source codes are open-sourced under the MIT License. Hosted data is subject to public domain usage agreements.
 
 ---
 

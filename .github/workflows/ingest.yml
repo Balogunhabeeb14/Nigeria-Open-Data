@@ -1,0 +1,41 @@
+name: Data Ingestion Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Data/**'
+  workflow_dispatch:
+  schedule:
+    # Run automatically every day at midnight UTC
+    - cron: '0 0 * * *'
+
+jobs:
+  ingest:
+    name: Run Ingestion Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-python: '3.10'
+          cache: 'pip'
+          cache-dependency-path: 'Data/requirements.txt'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Data/requirements.txt
+
+      - name: Run Ingest Script
+        env:
+          CKAN_URL: ${{ secrets.CKAN_URL }}
+          CKAN_API_KEY: ${{ secrets.CKAN_API_KEY }}
+          CKAN_ORG_ID: ${{ secrets.CKAN_ORG_ID }}
+        run: |
+          python Data/ingest.py
