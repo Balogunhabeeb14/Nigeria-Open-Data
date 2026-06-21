@@ -6,7 +6,18 @@ on:
       - main
     paths:
       - 'Data/**'
+      - 'pipeline/**'
+      - 'data/raw/**'
   workflow_dispatch:
+    inputs:
+      start_period:
+        description: 'Backfill start period (e.g. 2020, 2020Q1). Leave empty for incremental.'
+        required: false
+        default: ''
+      flow:
+        description: 'Which flow to run: all | ndp | cbn'
+        required: false
+        default: 'all'
   schedule:
     # Run automatically every day at midnight UTC
     - cron: '0 0 * * *'
@@ -16,6 +27,22 @@ jobs:
     name: Run Ingestion Pipeline
     runs-on: ubuntu-latest
 
+    services:
+      # Spin up a dedicated pipeline DB for the CI run
+      pipeline_db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: pipeline
+          POSTGRES_PASSWORD: pipeline
+          POSTGRES_DB: pipeline
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -23,19 +50,56 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-python: '3.10'
+          python-version: '3.11'   # fixed: was 'python-python' (typo)
           cache: 'pip'
-          cache-dependency-path: 'Data/requirements.txt'
+          cache-dependency-path: 'pipeline/requirements.txt'
 
-      - name: Install Python Dependencies
+      - name: Install Pipeline Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r Data/requirements.txt
+          pip install -r pipeline/requirements.txt
 
-      - name: Run Ingest Script
+      - name: Apply Schema Migrations
         env:
+          PIPELINE_DB_URL: postgresql://pipeline:pipeline@localhost:5433/pipeline
+        run: |
+          python -c "
+          from pipeline.db.warehouse import run_schema_migrations
+          run_schema_migrations()
+          print('Schema applied.')
+          "
+
+      - name: Run Nigeria Data Portal Flow
+        if: ${{ github.event.inputs.flow == 'all' || github.event.inputs.flow == 'ndp' || github.event.inputs.flow == '' }}
+        env:
+          PIPELINE_DB_URL: postgresql://pipeline:pipeline@localhost:5433/pipeline
           CKAN_URL: ${{ secrets.CKAN_URL }}
           CKAN_API_KEY: ${{ secrets.CKAN_API_KEY }}
           CKAN_ORG_ID: ${{ secrets.CKAN_ORG_ID }}
+          LANDING_ROOT: ./data/raw
+          PREFECT_API_URL: ""
         run: |
-          python Data/ingest.py
+          python -c "
+          from pipeline.flows.ingest_flow import ingest_flow
+          start = '${{ github.event.inputs.start_period }}' or None
+          result = ingest_flow.fn(source_id='NigeriaDataPortal', start_period=start)
+          print('NDP result:', result)
+          "
+
+      - name: Run CBN Flow
+        if: ${{ github.event.inputs.flow == 'all' || github.event.inputs.flow == 'cbn' || github.event.inputs.flow == '' }}
+        env:
+          PIPELINE_DB_URL: postgresql://pipeline:pipeline@localhost:5433/pipeline
+          CKAN_URL: ${{ secrets.CKAN_URL }}
+          CKAN_API_KEY: ${{ secrets.CKAN_API_KEY }}
+          CKAN_ORG_ID: ${{ secrets.CKAN_ORG_ID }}
+          LANDING_ROOT: ./data/raw
+          PREFECT_API_URL: ""
+        run: |
+          python -c "
+          from pipeline.flows.ingest_flow import ingest_flow
+          start = '${{ github.event.inputs.start_period }}' or None
+          result = ingest_flow.fn(source_id='CBN', start_period=start)
+          print('CBN result:', result)
+          "
+

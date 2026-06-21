@@ -1,20 +1,26 @@
-version: '3'
+version: '3.8'
 
+# ─── Named volumes ──────────────────────────────────────────────────────────
 volumes:
-  ckan_storage:
-  pg_data:
-  solr_data:
+  ckan_storage:      # CKAN file uploads
+  pg_data:           # CKAN's PostgreSQL data
+  solr_data:         # Solr search index
+  pipeline_pg_data:  # Dedicated pipeline database (CDM + manifest)
+  landing_zone:      # Shared landing zone for raw files
 
+# ─── Services ────────────────────────────────────────────────────────────────
 services:
+
+  # ── CKAN Open Data Portal ─────────────────────────────────────────────────
   ckan:
     image: ckan/ckan-base:2.10.4
     container_name: ckan_app
     ports:
       - "5000:5000"
     environment:
-      - CKAN_SQLALCHEMY_URL=postgresql://ckan:ckan@db/ckan
-      - CKAN_DATASTORE_WRITE_URL=postgresql://ckan:ckan@db/datastore
-      - CKAN_DATASTORE_READ_URL=postgresql://datastore_ro:datastore@db/datastore
+      - CKAN_SQLALCHEMY_URL=postgresql://ckan:${CKAN_DB_PASSWORD:-ckan}@db/ckan
+      - CKAN_DATASTORE_WRITE_URL=postgresql://ckan:${CKAN_DB_PASSWORD:-ckan}@db/datastore
+      - CKAN_DATASTORE_READ_URL=postgresql://datastore_ro:${DS_RO_PASS:-datastore}@db/datastore
       - CKAN_SOLR_URL=http://solr:8983/solr/ckan
       - CKAN_REDIS_URL=redis://redis:6379/1
       - CKAN_SITE_URL=http://localhost:5000
@@ -24,26 +30,111 @@ services:
       - redis
     volumes:
       - ckan_storage:/var/lib/ckan
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/3/action/site_read"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
+  # ── CKAN's PostgreSQL (metadata + DataStore) ──────────────────────────────
   db:
     image: postgres:15-alpine
     container_name: ckan_db
     environment:
       - POSTGRES_USER=ckan
-      - POSTGRES_PASSWORD=ckan
+      - POSTGRES_PASSWORD=${CKAN_DB_PASSWORD:-ckan}
       - POSTGRES_DB=ckan
       - DS_RO_PASS=datastore
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ckan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ── Solr Search Index ─────────────────────────────────────────────────────
   solr:
     image: ckan/ckan-solr:2.10-solr9
     container_name: ckan_solr
     volumes:
       - solr_data:/var/solr
 
+  # ── Redis (CKAN caching + task queue) ─────────────────────────────────────
   redis:
     image: redis:alpine
     container_name: ckan_redis
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PIPELINE SERVICES (new additions below)
+  # ─────────────────────────────────────────────────────────────────────────
+
+  # ── Dedicated Pipeline Database (CDM + manifest tables) ──────────────────
+  # This is completely separate from the CKAN database.
+  # Professional pattern: each system owns its data store.
+  pipeline_db:
+    image: postgres:15-alpine
+    container_name: pipeline_db
+    environment:
+      - POSTGRES_USER=pipeline
+      - POSTGRES_PASSWORD=${PIPELINE_DB_PASSWORD:-pipeline}
+      - POSTGRES_DB=pipeline
+    ports:
+      - "5433:5432"      # exposed on 5433 to avoid conflict with CKAN's db
+    volumes:
+      - pipeline_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Prefect Server (orchestration UI + API) ───────────────────────────────
+  # Stores flow run history in its own SQLite (default) or Postgres.
+  # Access the UI at http://localhost:4200
+  prefect-server:
+    image: prefecthq/prefect:3.0.0-python3.11
+    container_name: prefect_server
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+      - PREFECT_UI_API_URL=http://localhost:4200/api
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Ingestion Pipeline + Next.js Frontend (Unified App Container) ────────
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pipeline
+    environment:
+      - PIPELINE_DB_URL=postgresql://pipeline:${PIPELINE_DB_PASSWORD:-pipeline}@pipeline_db:5432/pipeline
+      - PREFECT_API_URL=http://prefect-server:4200/api
+      - CKAN_URL=http://ckan:5000
+      - CKAN_API_KEY=${CKAN_API_KEY}
+      - CKAN_ORG_ID=${CKAN_ORG_ID:-nigeriaopendata}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - LANDING_ROOT=/app/data/raw
+      # Next.js UI environment variables
+      - NEXT_PUBLIC_CKAN_URL=${NEXT_PUBLIC_CKAN_URL:-http://localhost:5000}
+      - NEXT_PUBLIC_PIPELINE_URL=http://localhost:8000
+    ports:
+      - "8000:8000"
+      - "3000:3000"
+    volumes:
+      - landing_zone:/app/data/raw    # shared volume for file-watcher + manual drops
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      pipeline_db:
+        condition: service_healthy
+    restart: unless-stopped
+
