@@ -3,7 +3,7 @@ import { Terminal, Play, HelpCircle } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "API Documentation",
-  description: "Access datasets programmatically using standard CKAN API endpoints. Documentation for developers, researchers, and data integration engines.",
+  description: "Access datasets programmatically using standard Open Data API endpoints. Documentation for developers, researchers, and data integration engines.",
 };
 
 export default function ApiDocsPage() {
@@ -12,7 +12,7 @@ export default function ApiDocsPage() {
       <div className="mb-12">
         <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">API Documentation</h1>
         <p className="text-lg text-slate-600 leading-relaxed">
-          Nigeria Open Data is powered by a developer-first, open-access API backend. You can programmatically query datasets, files, and organizations using standard CKAN Action API calls.
+          Nigeria Open Data is powered by a developer-first, open-access API backend. You can programmatically query datasets, files, and organizations using standard Open Data API calls.
         </p>
       </div>
 
