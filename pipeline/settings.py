@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # ── Landing zone ──────────────────────────────────────────────────────────
     landing_root: Path = Path("data/raw")
 
+    # ── Object Storage (S3 / Cloudflare R2) ────────────────────────────────────
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: SecretStr | None = None
+    s3_secret_access_key: SecretStr | None = None
+    s3_bucket_name: str = "nigeria-open-data"
+    s3_cdn_domain: str = "https://cdn.nigeriaopendata.gov.ng"
+
     # ── HTTP behaviour ────────────────────────────────────────────────────────
     request_timeout_seconds: int = 60
     request_max_retries: int = 3
@@ -78,6 +85,14 @@ class Settings(BaseSettings):
     def ckan_key(self) -> str | None:
         """Return the plain CKAN API key string, or None."""
         return self.ckan_api_key.get_secret_value() if self.ckan_api_key else None
+
+    def s3_access_key(self) -> str | None:
+        """Return the plain S3 Access Key ID, or None."""
+        return self.s3_access_key_id.get_secret_value() if self.s3_access_key_id else None
+
+    def s3_secret_key(self) -> str | None:
+        """Return the plain S3 Secret Access Key, or None."""
+        return self.s3_secret_access_key.get_secret_value() if self.s3_secret_access_key else None
 
     def __repr__(self) -> str:
         """Safe repr — secrets replaced with ***."""

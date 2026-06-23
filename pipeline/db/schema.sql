@@ -90,3 +90,39 @@ CREATE TABLE IF NOT EXISTS cdm.pipeline_run_log (
     error_message   TEXT
 );
 
+-- Represents dataset registry pointing to object storage files (e.g. Parquet/Delta)
+CREATE TABLE IF NOT EXISTS cdm.dataset_registry (
+    id              UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_system   TEXT            NOT NULL,
+    dataset_id      TEXT            UNIQUE NOT NULL,
+    display_name    TEXT            NOT NULL,
+    description     TEXT,
+    domain          TEXT            NOT NULL, -- 'health' | 'economics' | 'agric'
+    format          TEXT            NOT NULL, -- 'parquet' | 'csv' | 'media'
+    storage_url     TEXT            NOT NULL, -- S3/R2 URI: s3://bucket/path/
+    row_count       BIGINT,
+    file_size_bytes BIGINT,
+    is_public       BOOLEAN         DEFAULT true,
+    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+    search_vector   tsvector                  -- For GIN full-text search indexing
+);
+
+-- Represents individual media file assets (Images, Voices)
+CREATE TABLE IF NOT EXISTS cdm.media_assets (
+    id              UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    dataset_id      TEXT            REFERENCES cdm.dataset_registry(dataset_id) ON DELETE CASCADE,
+    asset_name      TEXT            NOT NULL,
+    content_type    TEXT            NOT NULL, -- 'image/webp' | 'audio/mpeg'
+    cdn_url         TEXT            NOT NULL, -- Public CDN endpoint
+    raw_s3_url      TEXT            NOT NULL, -- Secure S3 URI
+    file_size_bytes BIGINT          NOT NULL,
+    audio_duration  INTERVAL,                 -- For voice assets
+    voice_transcript TEXT,                    -- Automatic voice-to-text transcript
+    last_updated_at TIMESTAMPTZ     DEFAULT NOW()
+);
+
+-- Indexing for speed and scale
+CREATE INDEX IF NOT EXISTS idx_registry_search ON cdm.dataset_registry USING gin(search_vector);
+CREATE INDEX IF NOT EXISTS idx_media_dataset ON cdm.media_assets (dataset_id);
+
+
