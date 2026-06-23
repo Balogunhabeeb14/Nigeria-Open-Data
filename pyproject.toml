@@ -1,0 +1,71 @@
+[project]
+name = "naija-open-data-pipeline"
+version = "1.0.0"
+description = "Production ingestion pipeline for the Nigeria Open Data platform"
+readme = "pipeline/README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Nigeria Open Data Team", email = "support@nigeriaopendata.gov.ng" }
+]
+keywords = ["nigeria", "open-data", "data-pipeline", "etl", "prefect"]
+
+dependencies = [
+    "pandas>=2.2.0",
+    "ckanapi>=4.7",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.1",
+    "prefect>=3.0.0",
+    "sqlalchemy>=2.0.36",
+    "psycopg2-binary>=2.9.10",
+    "openpyxl>=3.1.5",
+    "lxml>=5.3.0",
+    "pyarrow>=17.0.0",
+    "tenacity>=9.0.0",
+    "pydantic>=2.9.2",
+    "pydantic-settings>=2.6.1",
+    "beautifulsoup4>=4.12.3",
+    "PyPDF2>=3.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[project.scripts]
+# Run from CLI: naija-ingest CBN --start-period 2020
+naija-ingest  = "pipeline.flows.ingest_flow:main"
+naija-deploy  = "pipeline.deploy:main"
+naija-watch   = "pipeline.flows.file_watcher_flow:file_watcher_flow"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]  # line length enforced by formatter
+
+[tool.ruff.isort]
+known-first-party = ["pipeline"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["pipeline/tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline*"]

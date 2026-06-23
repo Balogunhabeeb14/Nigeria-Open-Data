@@ -1,0 +1,24 @@
+pandas==2.2.0
+ckanapi==4.7
+requests==2.31.0
+python-dotenv==1.0.1
+# ── Pipeline core ──────────────────────────────────────────────────────────────
+prefect==3.0.0
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+# ── Data formats ───────────────────────────────────────────────────────────────
+openpyxl==3.1.5
+lxml==5.3.0
+pyarrow==17.0.0          # Parquet support (for future landing zone files)
+# ── HTTP / reliability ────────────────────────────────────────────────────────
+tenacity==9.0.0
+# ── Settings / validation ─────────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.6.1  # Pydantic BaseSettings (reads .env files)
+# ── Scrapers (last-resort only) ───────────────────────────────────────────────
+beautifulsoup4==4.12.3
+PyPDF2==3.0.1
+# ── API / Dynamic configuration ────────────────────────────────────────────────
+fastapi
+uvicorn
+python-multipart
