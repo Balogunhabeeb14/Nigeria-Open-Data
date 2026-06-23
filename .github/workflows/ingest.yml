@@ -1,3 +1,4 @@
+### ingestion workflow
 name: Data Ingestion Pipeline
 
 on:
@@ -82,7 +83,7 @@ jobs:
           python -c "
           from pipeline.flows.ingest_flow import ingest_flow
           start = '${{ github.event.inputs.start_period }}' or None
-          result = ingest_flow.fn(source_id='NigeriaDataPortal', start_period=start)
+          result = ingest_flow(source_id='NigeriaDataPortal', start_period=start)
           print('NDP result:', result)
           "
 
@@ -99,7 +100,7 @@ jobs:
           python -c "
           from pipeline.flows.ingest_flow import ingest_flow
           start = '${{ github.event.inputs.start_period }}' or None
-          result = ingest_flow.fn(source_id='CBN', start_period=start)
+          result = ingest_flow(source_id='CBN', start_period=start)
           print('CBN result:', result)
           "
 
