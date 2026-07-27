@@ -95,7 +95,7 @@ services:
   # Stores flow run history in its own SQLite (default) or Postgres.
   # Access the UI at http://localhost:4200
   prefect-server:
-    image: prefecthq/prefect:3.0.0-python3.11
+    image: prefecthq/prefect:3.7-python3.11
     container_name: prefect_server
     command: prefect server start --host 0.0.0.0
     ports:
