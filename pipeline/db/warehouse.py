@@ -47,6 +47,13 @@ def run_schema_migrations() -> None:
         conn.execute(text(sql))
     logger.info("Schema migrations applied.")
 
+    try:
+        from pipeline.db.seed_sources import seed_default_sources
+        seed_default_sources()
+    except Exception as exc:
+        logger.warning("Could not auto-seed default sources: %s", exc)
+
+
 
 # ── Watermark / Manifest ──────────────────────────────────────────────────────
 
