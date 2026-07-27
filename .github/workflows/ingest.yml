@@ -66,9 +66,11 @@ jobs:
         run: |
           python -c "
           from pipeline.db.warehouse import run_schema_migrations
+          from pipeline.config import list_source_ids
           run_schema_migrations()
-          print('Schema applied.')
+          print('Schema applied. Active sources:', list_source_ids())
           "
+
 
       - name: Run Nigeria Data Portal Flow
         if: ${{ github.event.inputs.flow == 'all' || github.event.inputs.flow == 'ndp' || github.event.inputs.flow == '' }}
