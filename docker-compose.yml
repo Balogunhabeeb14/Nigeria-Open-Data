@@ -103,6 +103,8 @@ services:
     environment:
       - PREFECT_SERVER_API_HOST=0.0.0.0
       - PREFECT_UI_API_URL=http://localhost:4200/api
+      - PREFECT_TELEMETRY_ENABLED=false
+      - PREFECT_SERVER_TELEMETRY_ENABLED=false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
       interval: 15s

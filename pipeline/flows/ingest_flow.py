@@ -142,6 +142,20 @@ def task_update_manifest(
     )
 
 
+@task(name="register_document")
+def task_register_document(source_id: str, indicator_config: dict) -> None:
+    """Register the document metadata into cdm.dataset_registry."""
+    from pipeline.db.warehouse import register_document
+
+    log = get_run_logger()
+    file_meta = indicator_config.get("_file_meta")
+    if file_meta:
+        register_document(source_id, file_meta)
+        log.info("[%s/%s] Registered document: %s", source_id, indicator_config["id"], file_meta.get("file_name"))
+    else:
+        log.warning("[%s/%s] No document metadata found to register.", source_id, indicator_config["id"])
+
+
 @flow(
     name="ingest",
     description="Generic data ingestion flow."
@@ -185,10 +199,16 @@ def ingest_flow(
             try:
                 raw_df = cast(pd.DataFrame, task_fetch(source_id, indicator_config, start_period))
 
+                if source_config.get("ingest_mode") == "document":
+                    task_register_document(source_id, indicator_config)
+
                 if raw_df.empty:
-                    log.info("[%s/%s] No new data — skipping.", source_id, indicator_id)
-                    task_update_manifest(source_id, indicator_config, raw_df, 0)
-                    summary[indicator_id] = {"status": "skipped", "rows": 0}
+                    log.info("[%s/%s] No tabular data extracted.", source_id, indicator_id)
+                    # For documents, empty df means either no tables or extraction failed.
+                    # We still updated manifest in register_document or above.
+                    if source_config.get("ingest_mode") != "document":
+                        task_update_manifest(source_id, indicator_config, raw_df, 0)
+                    summary[indicator_id] = {"status": "success" if source_config.get("ingest_mode") == "document" else "skipped", "rows": 0}
                     continue
 
                 clean_df = task_validate(source_id, indicator_config, raw_df)

@@ -19,15 +19,19 @@ FROM python:3.11-slim
 LABEL maintainer="Naija Open Data <support@nigeriaopendata.gov.ng>"
 LABEL description="Nigeria Open Data — Unified App Portal"
 
-# Install System Dependencies & Node.js
+# Install System Dependencies (Postgres client, etc)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         libpq-dev \
         gcc \
         supervisor \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy Node.js from the frontend-builder stage so we don't have to download it via slow apt mirrors!
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/
+COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 WORKDIR /app
 

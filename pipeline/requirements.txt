@@ -18,6 +18,7 @@ pydantic-settings==2.6.1  # Pydantic BaseSettings (reads .env files)
 # ── Scrapers (last-resort only) ───────────────────────────────────────────────
 beautifulsoup4==4.12.3
 PyPDF2==3.0.1
+pdfplumber==0.11.0
 # ── API / Dynamic configuration ────────────────────────────────────────────────
 fastapi
 uvicorn

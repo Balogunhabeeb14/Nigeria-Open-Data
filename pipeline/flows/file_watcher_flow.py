@@ -14,7 +14,7 @@ from pipeline.settings import settings
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EXTENSIONS = frozenset({".csv", ".xlsx", ".xls", ".json", ".parquet"})
+_SUPPORTED_EXTENSIONS = frozenset({".csv", ".xlsx", ".xls", ".json", ".parquet", ".pdf"})
 
 
 # ── Manifest helpers ──────────────────────────────────────────────────────────
