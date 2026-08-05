@@ -47,6 +47,12 @@ def run_schema_migrations() -> None:
         conn.execute(text(sql))
     logger.info("Schema migrations applied.")
 
+    try:
+        from pipeline.db.seed_sources import seed_default_sources
+        seed_default_sources()
+    except Exception as exc:
+        logger.warning("Could not auto-seed default sources: %s", exc)
+
 
 # ── Watermark / Manifest ──────────────────────────────────────────────────────
 
@@ -144,7 +150,7 @@ def load_to_stage(
         INSERT INTO cdm.stage_raw_observations
             (source_system, indicator_id, raw_json, file_or_url)
         VALUES
-            (:source_system, :indicator_id, :raw_json::jsonb, :file_or_url)
+            (:source_system, :indicator_id, CAST(:raw_json AS jsonb), :file_or_url)
     """)
     with get_engine().begin() as conn:
         conn.execute(sql, records)
@@ -192,6 +198,59 @@ def upsert_to_cdm(cdm_records: list[CDMRecord]) -> int:
 
     logger.info("Upserted %d CDM rows", len(rows))
     return len(rows)
+
+
+# ── Document Registration ─────────────────────────────────────────────────────
+
+def register_document(source_system: str, file_meta: dict) -> None:
+    """Upsert a document into cdm.dataset_registry.
+    
+    file_meta expects:
+        - file_name, file_path, format, size_bytes, hash, status, error_message
+    """
+    import uuid
+    # Create a deterministic dataset_id from the file hash to avoid duplicates
+    dataset_id = f"doc_{file_meta.get('hash', uuid.uuid4().hex[:12])}"
+    
+    sql = text("""
+        INSERT INTO cdm.dataset_registry (
+            source_system, dataset_id, display_name, domain, format,
+            storage_url, file_size_bytes, is_public
+        ) VALUES (
+            :source, :dataset_id, :name, 'economics', :format,
+            :url, :size, true
+        )
+        ON CONFLICT (dataset_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            file_size_bytes = EXCLUDED.file_size_bytes,
+            storage_url = EXCLUDED.storage_url
+    """)
+    
+    # We might also want to log the extraction status to the manifest, 
+    # but for now we'll just register the document here.
+    
+    with get_engine().begin() as conn:
+        conn.execute(sql, {
+            "source": source_system,
+            "dataset_id": dataset_id,
+            "name": file_meta.get("file_name", "Unknown Document"),
+            "format": file_meta.get("format", "document"),
+            "url": file_meta.get("file_path", ""),
+            "size": file_meta.get("size_bytes", 0)
+        })
+        
+    # Let's also use update_manifest to track the file extraction success/failure
+    # The source_key will be the dataset_id
+    update_manifest(
+        source_system=source_system,
+        source_key=dataset_id,
+        last_period=None,
+        row_count=0,
+        status=file_meta.get("status", "success"),
+        error_message=file_meta.get("error_message")
+    )
+    
+    logger.info("Registered document %s in dataset_registry", dataset_id)
 
 
 # ── Run audit log ─────────────────────────────────────────────────────────────

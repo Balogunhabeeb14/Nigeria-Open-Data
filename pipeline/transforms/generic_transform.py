@@ -1,41 +1,109 @@
-from typing import Iterator
-from datetime import datetime, timezone
+from __future__ import annotations
+import logging
 import pandas as pd
+from datetime import datetime
+from pipeline.transforms.cdm import CDMRecord, infer_period_type
+from pipeline.config import get_source_config
 
-def generic_transform(raw_data: dict, source_cfg: dict) -> Iterator[dict]:
+logger = logging.getLogger(__name__)
+
+def generic_transform(df: pd.DataFrame, dataset_config: dict) -> list[CDMRecord]:
     """
-    Dynamically maps rows from an uploaded dataset to the standard CDM schema.
-    It expects the CSV to have columns matching the indicator IDs or names, 
+    Dynamically maps a DataFrame to the standard CDM schema.
+    It expects the data to have columns matching the indicator IDs or names, 
     and ideally a 'date' or 'period' column.
     """
-    
-    # Try to find a date column
-    date_cols = [k for k in raw_data.keys() if "date" in str(k).lower() or "period" in str(k).lower() or "year" in str(k).lower()]
-    period_date = datetime.now(timezone.utc)
-    if date_cols and pd.notna(raw_data.get(date_cols[0])):
-        try:
-            val = raw_data[date_cols[0]]
-            if isinstance(val, str) and len(val) == 4 and val.isdigit():
-                period_date = datetime(int(val), 1, 1, tzinfo=timezone.utc)
-            else:
-                period_date = pd.to_datetime(val).replace(tzinfo=timezone.utc)
-        except:
-            pass
+    if df.empty:
+        return []
 
-    for ind in source_cfg.get("indicators", []):
+    source_id = dataset_config.get("source_id", "generic_file")
+    
+    # In some flow patterns we might receive the full source_config instead of an indicator config,
+    # or the indicator config might be missing source_id.
+    # We fetch the full config to find all indicators if we don't have them in the current dict.
+    try:
+        source_cfg = get_source_config(source_id)
+    except KeyError:
+        # Fallback if source is not in DB yet during tests
+        source_cfg = {"domain": dataset_config.get("domain", "general")}
+
+    indicators = dataset_config.get("indicators", [])
+    if not indicators:
+        # If we were passed an indicator config directly, we use it.
+        # Otherwise, if we were passed a source config, we use its indicators.
+        if "id" in dataset_config:
+            indicators = [dataset_config]
+        elif "indicators" in source_cfg:
+            indicators = source_cfg["indicators"]
+
+    # Try to find a date column
+    date_cols = [k for k in df.columns if "date" in str(k).lower() or "period" in str(k).lower() or "year" in str(k).lower()]
+    period_col = date_cols[0] if date_cols else None
+
+    records: list[CDMRecord] = []
+    failed = 0
+
+    for ind in indicators:
         ind_id = ind["id"]
         ind_name = ind["name"]
+        unit = ind.get("unit", "")
+        domain = ind.get("domain", source_cfg.get("domain", "general"))
         
-        # Check if the raw data has this indicator's ID or name
-        val = raw_data.get(ind_id) or raw_data.get(ind_name)
-        
-        if val is not None and pd.notna(val):
-            yield {
-                "indicator_id": ind_id,
-                "period_date": period_date,
-                "value_numeric": float(val) if str(val).replace('.', '', 1).isdigit() else None,
-                "value_text": str(val) if not str(val).replace('.', '', 1).isdigit() else None,
-                "unit": ind.get("unit", ""),
-                "domain": ind.get("domain", source_cfg.get("domain", "general")),
-                "source_id": source_cfg["source_id"]
-            }
+        # Check if the raw data has this indicator's ID or name as a column
+        val_col = None
+        for col in df.columns:
+            if str(col).lower() in (ind_id.lower(), ind_name.lower()):
+                val_col = col
+                break
+                
+        if not val_col:
+            continue
+
+        for _, row in df.iterrows():
+            try:
+                val = row[val_col]
+                if pd.isna(val):
+                    continue
+
+                period_str = str(datetime.now().year)
+                if period_col and pd.notna(row[period_col]):
+                    raw_period = row[period_col]
+                    if isinstance(raw_period, str) and len(raw_period) == 4 and raw_period.isdigit():
+                        period_str = raw_period
+                    else:
+                        try:
+                            period_str = pd.to_datetime(raw_period).strftime("%Y-%m-%d")
+                        except Exception:
+                            period_str = str(raw_period)
+
+                value_numeric = None
+                raw_val_str = str(val).strip().replace(',', '')
+                try:
+                    value_numeric = float(raw_val_str)
+                except ValueError:
+                    # If it's not numeric, we might just store None for value but still create a record
+                    # if the schema supports it. The CDM requires numeric value for now.
+                    logger.debug(f"Non-numeric value skipped: {val}")
+                    failed += 1
+                    continue
+
+                records.append(CDMRecord(
+                    source_system=source_id,
+                    domain=domain,
+                    indicator_id=ind_id,
+                    indicator_name=ind_name,
+                    geo_level="national",
+                    geo_code="NG",
+                    geo_name="Nigeria",
+                    period_type=infer_period_type(period_str),
+                    period=period_str,
+                    value=value_numeric,
+                    unit=unit,
+                    raw_source_url=None
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to transform row for {ind_id}: {e}")
+                failed += 1
+
+    logger.info(f"generic_transform: Produced {len(records)} records, {failed} failed")
+    return records

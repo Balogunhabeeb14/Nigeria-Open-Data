@@ -13,6 +13,7 @@ app = FastAPI(
 )
 
 from pipeline.settings import settings
+from pipeline.scrape import router as scrape_router
 
 # Add CORS middleware to allow requests from the Next.js frontend
 app.add_middleware(
@@ -22,6 +23,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(scrape_router)
 
 # ─── Pydantic Models ──────────────────────────────────────────────────────────
 
