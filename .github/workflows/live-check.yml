@@ -17,12 +17,15 @@ on:
     paths:
       - 'scripts/verify_live.py'
       - 'docker-compose.lite.yml'
+      - 'docker-compose.prod.yml'
+      - 'deploy/**'
       - 'Dockerfile'
       - 'entrypoint.sh'
       - 'pipeline/supervisord.local.conf'
       - 'pipeline/bootstrap.py'
       - 'pipeline/db/seed_sources.py'
       - 'pipeline/harvest/portals.py'
+      - 'pipeline/connectors/**'
       - '.github/workflows/live-check.yml'
 
 jobs:
@@ -85,6 +88,19 @@ jobs:
             echo "Population CSV (first rows):"; rid=$(curl -sf "$api/package_show?id=ng-wb-sp-pop-totl" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['resources'][0]['id'])")
             curl -sf "http://localhost:3000/datastore/dump/$rid" | head -4 | cut -c1-90
             echo "Latest rows via the data API:"; curl -sf "$api/datastore_search?resource_id=$rid&limit=500" | python3 -c "import json,sys; r=json.load(sys.stdin)['result']['records']; [print('  ', x['period'], x['value']) for x in r[-3:]]"
+            echo "State debt (DMO), newest quarter, five largest:"
+            rid=$(curl -sf "$api/package_show?id=ng-dmo-state-domestic-debt" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['resources'][0]['id'])" 2>/dev/null || true)
+            if [ -n "$rid" ]; then
+              curl -sf "$api/datastore_search?resource_id=$rid&limit=32000" | python3 -c "
+          import json, sys
+          r = json.load(sys.stdin)['result']['records']
+          periods = sorted({x['period'] for x in r})
+          latest = [x for x in r if x['period'] == periods[-1]]
+          print('  ', len(r), 'rows;', len(periods), 'quarters', periods[0], 'to', periods[-1], ';', len(latest), 'places in the newest')
+          [print('  ', x['geo_name'], format(x['value'], ',.2f')) for x in sorted(latest, key=lambda x: -x['value'])[:5]]"
+            else
+              echo "   not loaded"
+            fi
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY" | tee stack.txt
           echo "::notice title=Running app::$(sed 's/%/%25/g' stack.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
@@ -97,6 +113,20 @@ jobs:
           curl -s "http://localhost:3000/datasets/ng-wb-sp-pop-totl" | grep -q "All values"
           echo "Port 8000 must not be reachable from outside the container:"
           if curl -s -m 5 -o /dev/null http://localhost:8000/health; then echo "EXPOSED"; exit 1; else echo "not exposed (good)"; fi
+          echo "Admin endpoints are off by default, even from inside:"
+          code=$(docker compose -f docker-compose.lite.yml exec -T app curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/scrape/batch)
+          echo "POST /scrape/batch -> $code"; [ "$code" = "503" ]
+      - name: Public front door (reverse proxy) works
+        env:
+          SITE_ADDRESS: ':80'
+        run: |
+          docker compose -f docker-compose.lite.yml -f docker-compose.prod.yml up -d caddy
+          sleep 5
+          for path in / /status /datasets/ng-wb-sp-pop-totl "/api/3/action/package_search?rows=1"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost$path")
+            echo "$code via proxy $path"; [ "$code" = "200" ]
+          done
+          curl -sI -H "Accept-Encoding: gzip" http://localhost/datasets | grep -i -E "content-encoding|x-content-type-options" 
       - name: Loader and server logs
         if: always()
         run: |

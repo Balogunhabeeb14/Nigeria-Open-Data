@@ -79,6 +79,7 @@ def test_harvest_creates_then_updates_without_duplicating(remote_portal):
 
     first = harvest_portal(PORTAL, ckan=ckan, track=False)
     assert (first.seen, first.created, first.skipped, first.failed) == (3, 2, 1, 0)
+    assert first.skip_reasons == {"private": 1}
     assert set(ckan.packages) == {"hdx-a", "hdx-b"}
     assert ckan.packages["hdx-a"]["owner_org"] == "hdx" and "hdx" in ckan.orgs
     assert ckan.packages["hdx-a"]["groups"] == [{"name": "humanitarian"}]

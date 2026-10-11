@@ -38,6 +38,17 @@ _WDI_SOURCE_ID = 2
 _PAGE_SIZE_CATALOGUE = 500
 _PAGE_SIZE_DATA = 1000
 
+# The first part of an indicator code says what it measures more reliably
+# than the World Bank's broad topics do. Checked before the topic.
+_CODE_DOMAINS: list[tuple[str, str]] = [
+    ("DT.", "debt"), ("GC.DOD", "debt"),
+    ("GC.", "government"), ("IQ.", "government"), ("CC.", "government"), ("GE.", "government"),
+    ("PV.", "government"), ("RL.", "government"), ("RQ.", "government"), ("VA.", "government"),
+    ("IS.", "transport"), ("LP.", "transport"),
+    ("TM.", "trade"), ("TX.", "trade"), ("TG.", "trade"), ("TT.", "trade"),
+    ("EG.", "energy"), ("AG.", "agriculture"),
+]
+
 # World Bank topic name (lower-cased keyword) → platform domain / CKAN group.
 # Matched in order; the first topic of an indicator that matches wins.
 _TOPIC_DOMAINS: list[tuple[str, str]] = [
@@ -75,17 +86,25 @@ class WorldBankConnector(BaseConnector):
 
     # ── Catalogue ─────────────────────────────────────────────────────────────
 
-    def discover(self) -> list[dict]:
-        """Return every WDI indicator as an indicator config.
+    def databases(self) -> list[dict]:
+        """The World Bank databases to read, in priority order.
 
-        Each dict carries id, name, dataset_id (the World Bank code), domain,
-        unit and description, ready for the ingest flow.
+        Configured in the source's options as [{"id": 2, "name": ..., "domain":
+        ...}]. An indicator that appears in several databases is taken from
+        the first one that lists it.
         """
+        return self.options.get("databases") or [
+            {"id": _WDI_SOURCE_ID, "name": "World Development Indicators"}
+        ]
+
+    def discover_database(self, database: dict) -> list[dict]:
+        """Every indicator of one World Bank database, as indicator configs."""
         found: list[dict] = []
+        default_domain = database.get("domain") or self.config.get("domain", "economy")
         page, pages = 1, 1
         while page <= pages:
             url = (
-                f"{_API_BASE}/source/{_WDI_SOURCE_ID}/indicators"
+                f"{_API_BASE}/source/{database['id']}/indicators"
                 f"?format=json&per_page={_PAGE_SIZE_CATALOGUE}&page={page}"
             )
             meta, records = self._get_json(url)
@@ -99,13 +118,43 @@ class WorldBankConnector(BaseConnector):
                     "id": indicator_id_for(code),
                     "name": name,
                     "dataset_id": code,
-                    "domain": _domain_for(rec.get("topics") or [], self.config.get("domain", "economy")),
+                    "wb_source": int(database["id"]),
+                    "database": database.get("name") or f"World Bank database {database['id']}",
+                    "domain": domain_for(code, rec.get("topics") or [], default_domain),
                     "unit": unit_from_name(name),
                     "description": (rec.get("sourceNote") or "").strip(),
                     "source_organization": (rec.get("sourceOrganization") or "").strip(),
                 })
             page += 1
             self._pause()
+        return found
+
+    def discover(self) -> list[dict]:
+        """Every indicator across the configured databases, without repeats.
+
+        A database that cannot be listed is skipped with a warning so the
+        others still load. Each dict carries id, name, dataset_id (the World
+        Bank code), domain, unit and description, ready for the ingest flow.
+        """
+        found: list[dict] = []
+        seen: set[str] = set()
+        failures = 0
+        for database in self.databases():
+            try:
+                listed = self.discover_database(database)
+            except Exception as exc:
+                failures += 1
+                logger.warning("WorldBank: could not list database %s (%s)", database.get("id"), exc)
+                continue
+            fresh = [i for i in listed if i["dataset_id"] not in seen]
+            seen.update(i["dataset_id"] for i in fresh)
+            found.extend(fresh)
+            logger.info(
+                "WorldBank: %s lists %d indicators (%d new)",
+                database.get("name") or database.get("id"), len(listed), len(fresh),
+            )
+        if not found and failures:
+            raise WorldBankAPIError("No World Bank database could be listed")
         logger.info("WorldBank: catalogue lists %d indicators", len(found))
         return found
 
@@ -160,19 +209,20 @@ class WorldBankConnector(BaseConnector):
         """
         code = dataset_config["dataset_id"]
         country = self.options.get("country", "NGA")
+        wb_source = int(dataset_config.get("wb_source") or _WDI_SOURCE_ID)
 
         rows: list[dict] = []
         page, pages = 1, 1
         while page <= pages:
             url = (
                 f"{_API_BASE}/country/{country}/indicator/{code}"
-                f"?format=json&per_page={_PAGE_SIZE_DATA}&page={page}"
+                f"?format=json&per_page={_PAGE_SIZE_DATA}&page={page}&source={wb_source}"
             )
             meta, records = self._get_json(url)
             pages = _to_int(meta.get("pages"), default=1)
             for rec in records or []:
                 value = rec.get("value")
-                period = str(rec.get("date") or "").strip()
+                period = normalise_period(str(rec.get("date") or ""))
                 if value is None or not period:
                     continue
                 rows.append({
@@ -246,6 +296,24 @@ def unit_from_name(name: str) -> str | None:
         return units[-1] or None
     remainder = re.sub(r"^.*?estimate,?\s*", "", groups[-1], flags=re.IGNORECASE).strip()
     return remainder or None
+
+
+def normalise_period(date: str) -> str:
+    """World Bank dates → platform periods.
+
+    '2024' and '2024Q1' pass through; monthly '2024M03' becomes '2024-03'.
+    """
+    date = date.strip()
+    monthly = re.fullmatch(r"(\d{4})M(\d{2})", date)
+    return f"{monthly.group(1)}-{monthly.group(2)}" if monthly else date
+
+
+def domain_for(code: str, topics: list[dict], default: str) -> str:
+    """Topic for an indicator: by its code first, then the World Bank's topic."""
+    for prefix, domain in _CODE_DOMAINS:
+        if code.startswith(prefix):
+            return domain
+    return _domain_for(topics, default)
 
 
 def _domain_for(topics: list[dict], default: str) -> str:

@@ -109,6 +109,56 @@ DEFAULT_SOURCES = [
             }
         ],
     },
+    # Debt Management Office: each state's domestic debt, every quarter.
+    # Read from the documents the DMO publishes (there is no API).
+    {
+        "source_id": "DMO",
+        "connector": "pipeline.connectors.dmo.DMOConnector",
+        "transform": "pipeline.transforms.dmo_transform.transform",
+        "domain": "debt",
+        "schedule": "0 2 * * 2",       # Weekly, Tuesdays @ 02:00 UTC
+        "landing_dir": "dmo",
+        "ingest_mode": "api",
+        "options": {
+            "publisher_id": "debt-management-office",
+            "publisher_title": "Debt Management Office, Nigeria",
+            "publisher_description": "The federal agency that manages Nigeria's public debt and publishes debt statistics.",
+            "source_name": "Debt Management Office, Nigeria",
+            "source_url": "https://www.dmo.gov.ng/debt-profile/sub-national-debts",
+            "request_delay_seconds": 1,
+        },
+        "indicators": [
+            {
+                "id": "DMO_STATE_DOMESTIC_DEBT",
+                "kind": "states",
+                "name": "Domestic debt stock of each state and the FCT (naira)",
+                "domain": "debt",
+                "unit": "naira",
+                "featured": True,
+                "source_url": "https://www.dmo.gov.ng/debt-profile/sub-national-debts",
+                "description": (
+                    "What each of the 36 state governments and the Federal Capital Territory owes to "
+                    "lenders inside Nigeria, at the end of each quarter, as reported by the Debt "
+                    "Management Office. Recent quarters are marked provisional by the DMO and may be "
+                    "revised. It does not include what states owe abroad."
+                ),
+            },
+            {
+                "id": "DMO_STATES_DOMESTIC_DEBT_TOTAL",
+                "kind": "total",
+                "name": "Domestic debt stock of all states and the FCT, total (naira)",
+                "domain": "debt",
+                "unit": "naira",
+                "featured": True,
+                "source_url": "https://www.dmo.gov.ng/debt-profile/sub-national-debts",
+                "description": (
+                    "The combined domestic debt of the 36 states and the Federal Capital Territory at "
+                    "the end of each quarter, from the Debt Management Office's state-by-state reports. "
+                    "It is not Nigeria's total public debt, which also includes federal and external debt."
+                ),
+            },
+        ],
+    },
     # World Bank World Development Indicators (JSON API, no key needed).
     # The listed indicators are the featured set (all confirmed to return
     # Nigeria data from the live API on 2026-10-11). With options.discover on,
@@ -132,6 +182,19 @@ DEFAULT_SOURCES = [
             "license_title": "Creative Commons Attribution 4.0 (CC BY 4.0)",
             "license_url": "https://datacatalog.worldbank.org/public-licenses",
             "country": "NGA",
+            # World Bank databases to read, in priority order. An indicator in
+            # several is taken from the first. All share one API and licence.
+            "databases": [
+                {"id": 2,  "name": "World Development Indicators"},
+                {"id": 3,  "name": "Worldwide Governance Indicators", "domain": "government"},
+                {"id": 6,  "name": "International Debt Statistics", "domain": "debt"},
+                {"id": 20, "name": "Quarterly Public Sector Debt", "domain": "debt"},
+                {"id": 66, "name": "Logistics Performance Index", "domain": "transport"},
+                {"id": 16, "name": "Health Nutrition and Population Statistics", "domain": "health"},
+                {"id": 14, "name": "Gender Statistics", "domain": "gender"},
+                {"id": 28, "name": "Global Findex database", "domain": "economy"},
+                {"id": 25, "name": "Jobs", "domain": "labour"},
+            ],
             "discover": True,           # set False to load only the list below
             "max_indicators": None,     # cap discovery, e.g. 200 for a quick first run
             "request_delay_seconds": 0.25,

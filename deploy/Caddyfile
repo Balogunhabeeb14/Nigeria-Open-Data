@@ -1,0 +1,16 @@
+# Public entry point: HTTPS, compression and a few safety headers in front of
+# the website. With a real domain in SITE_ADDRESS, Caddy obtains and renews
+# the certificate by itself; the domain's DNS must already point at this
+# server and ports 80 and 443 must be open.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		-Server
+	}
+
+	reverse_proxy app:3000
+}

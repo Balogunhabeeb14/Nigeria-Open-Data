@@ -63,7 +63,8 @@ def world_bank(monkeypatch):
     execute("""
         UPDATE cdm.data_sources
         SET indicators = '[]'::jsonb,
-            options = options || '{"request_delay_seconds": 0, "discover": true}'::jsonb
+            options = options || '{"request_delay_seconds": 0, "discover": true,
+                                   "databases": [{"id": 2, "name": "World Development Indicators"}]}'::jsonb
         WHERE source_id = 'WorldBank'
     """)
     # Retries would only slow a failing test down.

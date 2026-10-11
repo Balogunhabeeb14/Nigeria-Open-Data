@@ -184,6 +184,8 @@ export PIPELINE_DB_URL=postgresql://user:password@localhost:5432/naija
 scripts/run_local.sh
 ```
 
+To put it on the internet with HTTPS on your own domain, see [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ### Two ways to run the catalogue
 
 | | Built-in catalogue (`CATALOG_BACKEND=local`) | CKAN (`CATALOG_BACKEND=ckan`, the default) |

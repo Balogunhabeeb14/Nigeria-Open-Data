@@ -153,3 +153,59 @@ def test_unit_from_name(name, unit):
 
 def test_indicator_id_for():
     assert indicator_id_for("NY.GDP.MKTP.CD") == "WB_NY_GDP_MKTP_CD"
+
+
+def test_several_databases_are_listed_without_repeating_an_indicator(monkeypatch):
+    wdi = wb_catalogue([("NY.GDP.MKTP.KD.ZG", "GDP growth (annual %)", "Economy & Growth"),
+                        ("DT.DOD.DECT.CD", "External debt stocks, total (DOD, current US$)", "External Debt")])
+    governance = wb_catalogue([("CC.EST", "Control of Corruption: Estimate", ""),
+                               ("NY.GDP.MKTP.KD.ZG", "GDP growth (annual %)", "")])       # also in WDI
+    logistics = wb_catalogue([("LP.LPI.OVRL.XQ", "Logistics performance index: Overall (1=low to 5=high)", "")])
+    connector = make_connector(
+        monkeypatch,
+        {"/source/2/indicators": wdi, "/source/3/indicators": governance,
+         "/source/9/indicators": RuntimeError("database withdrawn"), "/source/66/indicators": logistics},
+        options={"discover": True, "databases": [
+            {"id": 2, "name": "World Development Indicators"},
+            {"id": 3, "name": "Worldwide Governance Indicators", "domain": "government"},
+            {"id": 9, "name": "A database that fails"},
+            {"id": 66, "name": "Logistics Performance Index", "domain": "transport"},
+        ]},
+        indicators=[],
+    )
+
+    found = {i["dataset_id"]: i for i in connector.expand_indicators()}
+
+    assert len(found) == 4                                                   # GDP growth once; the failing database skipped
+    assert found["NY.GDP.MKTP.KD.ZG"]["wb_source"] == 2                      # first database wins
+    assert found["CC.EST"]["wb_source"] == 3 and found["CC.EST"]["domain"] == "government"
+    assert found["CC.EST"]["database"] == "Worldwide Governance Indicators"
+    assert found["LP.LPI.OVRL.XQ"]["domain"] == "transport"
+    assert found["DT.DOD.DECT.CD"]["domain"] == "debt"                       # by code, despite a broad topic
+
+
+def test_fetch_asks_the_right_database_and_normalises_monthly_periods(monkeypatch):
+    payload = wb_series("X.MONTHLY", "Monthly thing", {"2024M11": 1.0, "2024M12": 2.0})
+    connector = make_connector(monkeypatch, {
+        "/indicator/X.MONTHLY": payload,
+        "/indicator/NY.GDP.MKTP.KD.ZG": wb_series("NY.GDP.MKTP.KD.ZG", "GDP growth (annual %)", {"2024": 3.4}),
+    })
+    df = connector.fetch({"id": "WB_X", "dataset_id": "X.MONTHLY", "name": "Monthly thing", "wb_source": 15})
+    assert "source=15" in connector.requested[0]
+    assert df["TIME_PERIOD"].tolist() == ["2024-11", "2024-12"]
+
+    connector.fetch(GDP)
+    assert "source=2" in connector.requested[-1]                             # default: the main database
+
+
+@pytest.mark.parametrize("code,topic,expected", [
+    ("IS.AIR.PSGR", "Infrastructure ", "transport"),
+    ("GC.DOD.TOTL.GD.ZS", "Public Sector ", "debt"),
+    ("GC.REV.XGRT.GD.ZS", "Public Sector ", "government"),
+    ("TX.VAL.MRCH.CD.WT", "Trade", "trade"),
+    ("SH.DYN.MORT", "Health ", "health"),
+    ("ZZ.UNKNOWN", "", "economy"),
+])
+def test_topic_assignment(code, topic, expected):
+    from pipeline.connectors.world_bank import domain_for
+    assert domain_for(code, [{"id": "1", "value": topic}] if topic else [], "economy") == expected

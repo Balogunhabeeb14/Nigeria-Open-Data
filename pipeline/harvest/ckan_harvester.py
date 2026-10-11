@@ -40,12 +40,14 @@ class HarvestReport:
     skipped: int = 0
     failed: int = 0
     errors: list[str] = field(default_factory=list)
+    skip_reasons: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
             "portal": self.portal, "seen": self.seen, "created": self.created,
             "updated": self.updated, "unchanged": self.unchanged,
-            "skipped": self.skipped, "failed": self.failed, "errors": self.errors[:20],
+            "skipped": self.skipped, "skip_reasons": self.skip_reasons,
+            "failed": self.failed, "errors": self.errors[:20],
         }
 
 
@@ -102,13 +104,35 @@ def local_name_for(portal_id: str, remote_name: str) -> str:
     return slugify(f"{portal_id}-{remote_name}")
 
 
+def _linkable(resource: dict) -> bool:
+    url = resource.get("url") or resource.get("download_url")
+    return bool(url) and str(url).lower().startswith(("http://", "https://"))
+
+
+def skip_reason(remote: dict) -> str | None:
+    """Why a remote dataset is not listed, or None if it should be.
+
+    Reported per harvest so a portal that suddenly yields mostly skips is
+    noticed and explained.
+    """
+    if remote.get("private"):
+        return "private"
+    if remote.get("archived"):
+        return "archived by the portal"
+    if remote.get("state") not in (None, "active"):
+        return "not active"
+    if not any(_linkable(r) for r in remote.get("resources") or []):
+        return "no file to link to"
+    return None
+
+
 def map_dataset(portal: dict, remote: dict) -> dict | None:
     """Translate a remote CKAN dataset into the fields we store.
 
     Returns None for datasets we should not list: private or archived ones,
     and ones with no file to link to.
     """
-    if remote.get("private") or remote.get("archived") or remote.get("state") not in (None, "active"):
+    if skip_reason(remote):
         return None
 
     resources = []
@@ -222,9 +246,12 @@ def harvest_portal(
         report.seen += 1
         remote_name = remote.get("name") or ""
         try:
-            mapped = map_dataset(portal, remote)
+            reason = skip_reason(remote)
+            mapped = None if reason else map_dataset(portal, remote)
             if mapped is None:
+                reason = reason or "could not be mapped"
                 report.skipped += 1
+                report.skip_reasons[reason] = report.skip_reasons.get(reason, 0) + 1
                 continue
 
             stamp = remote.get("metadata_modified") or ""

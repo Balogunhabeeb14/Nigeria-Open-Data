@@ -458,7 +458,7 @@ def run_ingest(
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-_DESCRIPTIVE_KEYS = ("name", "description", "unit", "domain", "source_organization", "featured", "source_url")
+_DESCRIPTIVE_KEYS = ("name", "description", "unit", "domain", "source_organization", "featured", "source_url", "database")
 
 
 def _with_metadata(data_hash: str | None, indicator_config: dict, source_options: dict) -> str | None:

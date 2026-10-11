@@ -29,6 +29,8 @@ def transform(df: pd.DataFrame, dataset_config: dict) -> list[CDMRecord]:
     domain = dataset_config.get("domain", "economy")
     source_url = f"https://data.worldbank.org/indicator/{code}?locations=NG"
     notes = dataset_config.get("source_organization") or None
+    if int(dataset_config.get("wb_source") or 2) != 2:
+        source_url = f"https://databank.worldbank.org/source/{dataset_config.get('wb_source')}"
 
     records: list[CDMRecord] = []
     skipped = 0

@@ -75,6 +75,91 @@ def check_world_bank() -> list[dict]:
     return rows
 
 
+def check_world_bank_databases() -> list[dict]:
+    """Beyond the main database: does each extra one list indicators and hold Nigeria data?"""
+    cfg = source("WorldBank")
+    connector = WorldBankConnector(config={**cfg, "options": {**cfg["options"], "request_delay_seconds": 0.3}})
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for database in connector.databases():
+        label = f"{database['id']} {database.get('name', '')}"
+        try:
+            listed = connector.discover_database(database)
+        except Exception as exc:
+            rows.append({"check": label, "status": FAIL, "detail": f"cannot list: {str(exc)[:160]}"})
+            continue
+        fresh = [i for i in listed if i["dataset_id"] not in seen]
+        seen.update(i["dataset_id"] for i in listed)
+        if int(database["id"]) == 2:
+            rows.append({"check": label, "status": OK, "detail": f"{len(listed)} indicators (checked one by one above)"})
+            continue
+        step = max(1, len(fresh) // 8)
+        with_data, errors, periods = 0, [], []
+        sample = fresh[::step][:8]
+        for indicator in sample:
+            try:
+                df = connector.fetch(indicator)
+                if not df.empty:
+                    with_data += 1
+                    periods.append(str(df.iloc[-1]["TIME_PERIOD"]))
+            except Exception as exc:
+                errors.append(f"{indicator['dataset_id']}: {str(exc)[-90:]}")
+        status = FAIL if errors and not with_data else (OK if with_data else WARN)
+        detail = (f"{len(listed)} indicators, {len(fresh)} not in an earlier database; "
+                  f"{with_data} of {len(sample)} sampled have Nigeria data"
+                  + (f", latest periods {sorted(set(periods))[-3:]}" if periods else "")
+                  + (f"; errors: {errors[:2]}" if errors else ""))
+        rows.append({"check": label, "status": status, "detail": detail})
+    return rows
+
+
+def check_dmo() -> list[dict]:
+    """Read every state-debt document the DMO lists, as the pipeline would."""
+    from pipeline.connectors.dmo import DMOConnector
+    from pipeline.geo import STATES
+
+    cfg = source("DMO")
+    connector = DMOConnector(config=cfg)
+    rows: list[dict] = []
+    try:
+        documents = connector.discover()
+    except Exception as exc:
+        return [{"check": "DMO document list", "status": FAIL, "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}]
+    if not documents:
+        return [{"check": "DMO document list", "status": FAIL, "detail": "no domestic-debt documents found on the page"}]
+    rows.append({"check": "DMO document list", "status": OK,
+                 "detail": f"{len(documents)} quarterly documents, {documents[-1]['period']} to {documents[0]['period']}"})
+
+    complete, partial, unreadable, mismatched = [], [], [], []
+    newest_detail = ""
+    for position, document in enumerate(documents):
+        try:
+            amounts, total = connector.read_document(document)
+        except Exception as exc:
+            unreadable.append(f"{document['period']} ({str(exc)[-60:]})")
+            continue
+        (complete if len(amounts) == len(STATES) else partial).append(document["period"])
+        computed = sum(amounts.values())
+        if total and abs(computed - total) > 0.005 * total:
+            mismatched.append(f"{document['period']}: sum {computed:,.0f} vs total line {total:,.0f}")
+        if position == 0 or not newest_detail:
+            top = sorted(amounts.items(), key=lambda kv: -kv[1])[:3]
+            newest_detail = (f"{document['period']}: {len(amounts)} states, sum {computed:,.2f}, "
+                             f"stated total {total if total is None else format(total, ',.2f')}; "
+                             f"largest {[(STATES[c], round(v / 1e9, 1)) for c, v in top]} (billions of naira)")
+    rows.append({"check": "DMO newest readable document", "status": OK if newest_detail else FAIL, "detail": newest_detail or "none"})
+    rows.append({"check": "DMO documents read in full (37 of 37)", "status": OK if complete else FAIL,
+                 "detail": f"{len(complete)}: {complete[-1] if complete else ''} to {complete[0] if complete else ''}"})
+    if partial:
+        rows.append({"check": "DMO documents missing a state or two", "status": WARN, "detail": ", ".join(partial)})
+    if mismatched:
+        rows.append({"check": "DMO sum differs from total line", "status": WARN, "detail": "; ".join(mismatched[:6])})
+    if unreadable:
+        rows.append({"check": "DMO documents not readable", "status": WARN if complete else FAIL,
+                     "detail": f"{len(unreadable)}: " + "; ".join(unreadable[:8])})
+    return rows
+
+
 def check_harvest() -> list[dict]:
     rows = []
     for portal in HARVEST_PORTALS:
@@ -127,6 +212,8 @@ def main() -> int:
 
     sections = [
         ("World Bank (live source)", check_world_bank()),
+        ("World Bank databases", check_world_bank_databases()),
+        ("Debt Management Office (state debt documents)", check_dmo()),
         ("Portals harvested for listings", check_harvest()),
         ("Sources needing maintained links", check_files()),
     ]

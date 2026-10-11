@@ -350,15 +350,15 @@ sources:
     name: WHO Global Health Observatory
     publisher: World Health Organization
     url: https://www.who.int/data/gho
-    coverage: Around two thousand health indicators (disease burden, immunisation, health workforce, risk factors).
+    coverage: Around two thousand health indicators (disease burden, immunisation, health workforce, risk factors), many split by sex or age.
     topics: [health]
     geography: national
     access: api
     integration: planned
-    priority: 1
-    licence: check terms
-    checked: ""
-    notes: Has an open OData API. Natural second connector after the World Bank; same shape of work.
+    priority: 2
+    licence: WHO terms of use, not a standard open licence. Use is granted "for public health purposes" with attribution to WHO and to the countries that supplied the data.
+    checked: "2026-10-11: the OData API (ghoapi.azureedge.net/api) answers without a key and returns Nigeria rows (SpatialDim eq 'NGA'). Terms read at who.int/about/policies/publishing/data-policy/terms-and-conditions."
+    notes: Decide whether republishing fits WHO's terms before building; if in doubt, list indicators and link out. One indicator code holds several series (Dim1 to Dim3, e.g. sex), so each code and dimension combination has to become its own dataset. Many of the headline health series already arrive through the World Bank.
 
   - id: unicef
     name: UNICEF Data Warehouse

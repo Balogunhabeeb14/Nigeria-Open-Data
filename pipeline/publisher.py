@@ -58,6 +58,10 @@ TOPIC_TITLES = {
     "government": "Government and Public Finance",
     "society": "Society",
     "population": "Population",
+    "debt": "Debt",
+    "transport": "Transport and Logistics",
+    "trade": "Trade",
+    "elections": "Elections",
 }
 
 
@@ -82,6 +86,10 @@ TOPIC_DESCRIPTIONS = {
     "urban": "Cities, housing and urban services.",
     "humanitarian": "Emergencies, displacement, food security and relief operations.",
     "geography": "Boundaries, settlements and other map data.",
+    "debt": "What the federal and state governments owe, at home and abroad, and what it costs to service.",
+    "transport": "Roads, rail, air and sea traffic, ports and how well goods move.",
+    "trade": "Imports, exports, tariffs and trade partners.",
+    "elections": "Voters, polling units and declared results.",
 }
 
 
@@ -204,6 +212,11 @@ def _build_package_fields(
     geo_levels = sorted({r["geo_level"] for r in rows if r.get("geo_level")})
 
     source_name = options.get("source_name") or source_id
+    # A source with several databases names the one this series comes from.
+    shown_source = (
+        f"{options['publisher_title']}, {indicator_config['database']}"
+        if indicator_config.get("database") and options.get("publisher_title") else source_name
+    )
     source_url = (
         indicator_config.get("source_url")
         or _first(rows, "raw_source_url")
@@ -217,7 +230,7 @@ def _build_package_fields(
     parts: list[str] = []
     if indicator_config.get("description"):
         parts.append(indicator_config["description"].strip())
-    provenance = f"Source: {source_name}."
+    provenance = f"Source: {shown_source}."
     if indicator_config.get("source_organization"):
         provenance += f" Originally compiled by: {indicator_config['source_organization'].rstrip('.')}."
     parts.append(provenance)
@@ -236,7 +249,7 @@ def _build_package_fields(
     extras = {
         "domain": domain,
         "indicator_id": indicator_id,
-        "source": source_name,
+        "source": shown_source,
         "source_system": source_id,
         "source_url": source_url,
         "source_code": indicator_config.get("dataset_id") or "",

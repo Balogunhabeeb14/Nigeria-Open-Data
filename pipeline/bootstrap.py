@@ -13,7 +13,7 @@ Order matters for a first start, when the catalogue is empty:
     3. everything else the sources offer    (can take a long while)
 
 Settings (environment):
-    BOOTSTRAP_SOURCES   comma-separated source ids      default: WorldBank
+    BOOTSTRAP_SOURCES   comma-separated source ids      default: DMO,WorldBank
     BOOTSTRAP_HARVEST   true|false                      default: true
     BOOTSTRAP_FULL      true|false, run step 3          default: true
     REFRESH_HOURS       hours between refreshes; 0 = run once and exit
@@ -73,7 +73,7 @@ def run_once() -> None:
     _configure_logging()
     run_schema_migrations()
 
-    sources = [s.strip() for s in os.environ.get("BOOTSTRAP_SOURCES", "WorldBank").split(",") if s.strip()]
+    sources = [s.strip() for s in os.environ.get("BOOTSTRAP_SOURCES", "DMO,WorldBank").split(",") if s.strip()]
 
     for source in sources:
         try:
