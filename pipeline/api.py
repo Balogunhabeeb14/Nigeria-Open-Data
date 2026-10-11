@@ -26,6 +26,12 @@ app.add_middleware(
 
 app.include_router(scrape_router)
 
+# Built-in catalogue (read-only). Only when this app is the catalogue; with
+# CATALOG_BACKEND=ckan those routes belong to the CKAN server.
+if settings.catalog_backend == "local":
+    from pipeline.catalog.api import router as catalog_router
+    app.include_router(catalog_router)
+
 # ─── Pydantic Models ──────────────────────────────────────────────────────────
 
 class PublisherCreate(BaseModel):

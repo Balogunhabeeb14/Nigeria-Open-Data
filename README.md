@@ -78,7 +78,11 @@ Nigeria-Open-Data/
 │   ├── scrape.py                  # FastAPI routes that trigger ingestion on demand
 │   ├── config.py                  # Reads source configuration from cdm.data_sources
 │   ├── registry.py                # Loads connector and transform classes by dotted path
-│   ├── publisher.py               # CKAN publishing: dataset + full DataStore table
+│   ├── publisher.py               # Publishing: dataset + full data table (CKAN or built-in)
+│   ├── bootstrap.py               # Standalone loader: fills and refreshes the catalogue
+│   ├── catalog/
+│   │   ├── local.py               # Built-in catalogue, driven like a CKAN client
+│   │   └── api.py                 # Its read API, in CKAN's shape
 │   ├── deploy.py                  # Registers Prefect schedules
 │   ├── settings.py                # Environment configuration (pydantic-settings)
 │   │
@@ -112,7 +116,9 @@ Nigeria-Open-Data/
 │
 ├── datapipeline/                  # Earlier Mage AI experiment; not used by the pipeline
 ├── src/                           # Next.js frontend
-├── docker-compose.yml
+├── scripts/run_local.sh           # Run everything without Docker
+├── docker-compose.lite.yml        # 2 containers: Postgres + app (built-in catalogue)
+├── docker-compose.yml             # Full stack with CKAN, Solr, Redis, Prefect
 ├── .env.example
 └── .github/workflows/             # tests.yml (pytest), ingest.yml (scheduled ingestion)
 ```
@@ -150,7 +156,49 @@ One indicator becomes one CKAN dataset (for example `ng-wb-ny-gdp-mktp-cd`) with
 
 ---
 
-## Getting started
+## Try it: the whole app in one command
+
+```bash
+docker compose -f docker-compose.lite.yml up --build
+# then open http://localhost:3000
+```
+
+This starts two containers: Postgres, and one app container with the website, the API and a loader. No CKAN, Solr, Redis or Prefect server is needed. The same command works in a GitHub Codespace (open port 3000 when it is offered).
+
+On first start the loader fills the catalogue in this order, and the site shows datasets as they arrive:
+
+1. the 22 featured World Bank indicators (a minute or two);
+2. Nigeria datasets listed on HDX, openAFRICA and EnergyData.info;
+3. the rest of the World Bank catalogue (about 1,500 requests; let it run).
+
+It then refreshes weekly. Tune it with `BOOTSTRAP_FULL=false`, `BOOTSTRAP_HARVEST=false` or `REFRESH_HOURS` (see `pipeline/bootstrap.py`).
+
+Without Docker, with Python 3.11+, Node 20+ and a Postgres database:
+
+```bash
+pip install -r pipeline/requirements.txt && npm ci
+export PIPELINE_DB_URL=postgresql://user:password@localhost:5432/naija
+scripts/run_local.sh
+```
+
+### Two ways to run the catalogue
+
+| | Built-in catalogue (`CATALOG_BACKEND=local`) | CKAN (`CATALOG_BACKEND=ckan`, the default) |
+|---|---|---|
+| Start with | `docker-compose.lite.yml` | `docker-compose.yml` |
+| Containers | 2 | 7 |
+| Catalogue lives in | the pipeline database (`cdm.catalog_*`) | CKAN + Solr |
+| Search | Postgres full-text search | Solr |
+| Scheduling | built-in loader, weekly | Prefect deployments |
+| Extras | none | CKAN admin UI, extensions, harvesting plugins |
+
+The pipeline and the website are identical in both. The built-in catalogue answers the same API routes as CKAN (`/api/3/action/package_search`, `package_show`, `group_list`, `organization_list`, `datastore_search`, and `/datastore/dump/<id>` for CSV), so moving between them is a setting, not a rewrite.
+
+Only the website's port is published in the lite set-up. The pipeline API stays inside the container because its write endpoints are not yet access-controlled; the website proxies the read-only routes.
+
+---
+
+## Getting started with the full CKAN stack
 
 ### 1. Configure
 
@@ -312,7 +360,8 @@ The Prefect UI (http://localhost:4200) has per-task logs for each run.
 - The frontend's publisher form posts to routes that are not proxied to the pipeline API.
 - CBN and Nigeria Data Portal need real file URLs and dataset ids (see the source catalogue).
 - The scheduled GitHub Action (`ingest.yml`) writes to a database that is discarded when the job ends.
-- Dataset pages have no chart or table preview yet; the DataStore API they need is now in place.
+- Charts cover one place over time. State and LGA tables are shown as tables; maps and multi-place charts are not built yet.
+- The full CKAN stack (`docker-compose.yml`) has not been run end to end since these changes; the lite set-up is the tested path.
 
 ---
 

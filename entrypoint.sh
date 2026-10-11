@@ -22,5 +22,10 @@ sys.exit(1)
 echo "=== Running Database Schema Migrations ==="
 python -c "from pipeline.db.warehouse import run_schema_migrations; run_schema_migrations()"
 
+if [ "${CATALOG_BACKEND:-ckan}" = "local" ]; then
+    echo "=== Starting on its own: API + built-in catalogue, website, loader ==="
+    exec /usr/bin/supervisord -c /app/pipeline/supervisord.local.conf
+fi
+
 echo "=== Starting Process Manager (supervisord) ==="
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

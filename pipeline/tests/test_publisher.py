@@ -25,6 +25,8 @@ INDICATOR = {
     "featured": True,
 }
 OPTIONS = {
+    "publisher_id": "world-bank",
+    "publisher_title": "World Bank",
     "source_name": "World Bank, World Development Indicators",
     "source_url": "https://data.worldbank.org/country/nigeria",
     "license_id": "cc-by",
@@ -70,6 +72,7 @@ def test_first_publish_creates_dataset_with_full_table_and_provenance(stored):
     assert package["license_id"] == "cc-by"
     assert package["url"].startswith("https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG")
     assert package["groups"] == [{"name": "economy"}] and "economy" in ckan.groups
+    assert package["owner_org"] == "world-bank" and "world-bank" in ckan.orgs   # filed under its publisher
 
     meta = extras(package)
     assert meta["source"] == "World Bank, World Development Indicators"
@@ -77,8 +80,9 @@ def test_first_publish_creates_dataset_with_full_table_and_provenance(stored):
     assert (meta["temporal_start"], meta["temporal_end"]) == ("2023", "2025")
     assert meta["observation_count"] == "3" and meta["featured"] == "true"
     assert "last_refreshed" in meta
-    for phrase in ("Annual percentage growth", "World Bank", "CC BY 4.0", "2023 to 2025"):
-        assert phrase in package["notes"]
+    assert package["notes"].startswith("Annual percentage growth")      # description leads
+    assert "Source: World Bank" in package["notes"]
+    assert "*" not in package["notes"]                                  # plain text, shown as-is
 
     [resource] = package["resources"]
     assert resource["name"] == DATA_RESOURCE_NAME and resource["format"] == "CSV"

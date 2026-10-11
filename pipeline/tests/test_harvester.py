@@ -51,9 +51,9 @@ def test_map_dataset_links_out_and_credits_the_source():
         "name": "facilities.csv", "format": "CSV", "description": "",
         "url": "https://data.humdata.org/dataset/x/resource/y/download/facilities.csv",
     }]
-    for phrase in ("Health facility locations.", "Humanitarian Data Exchange", "GRID3",
-                   "Creative Commons Attribution International", "does not hold a copy"):
+    for phrase in ("Health facility locations.", "Humanitarian Data Exchange", "GRID3", "does not hold a copy"):
         assert phrase in mapped["notes"]
+    assert "*" not in mapped["notes"]
     tag_names = [t["name"] for t in mapped["tags"]]
     assert tag_names[:2] == ["nigeria", "hdx"] and "geodata points" in tag_names  # '/' is not allowed in tags
     meta = {e["key"]: e["value"] for e in mapped["extras"]}

@@ -14,7 +14,7 @@ from pipeline.harvest.ckan_harvester import harvest_portal
 from pipeline.harvest.portals import HARVEST_PORTALS, get_portal
 
 
-@task(name="harvest_portal", retries=1, retry_delay_seconds=120)
+@task(name="harvest_portal", retries=1, retry_delay_seconds=30)
 def task_harvest(portal: dict, limit: int | None, dry_run: bool) -> dict:
     return harvest_portal(portal, limit=limit, dry_run=dry_run).as_dict()
 

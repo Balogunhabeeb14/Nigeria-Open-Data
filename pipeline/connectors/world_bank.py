@@ -22,6 +22,7 @@ the flow's content hash, which costs nothing extra here.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 
@@ -31,7 +32,8 @@ from pipeline.connectors.base import BaseConnector
 
 logger = logging.getLogger(__name__)
 
-_API_BASE = "https://api.worldbank.org/v2"
+# Overridable so tests and offline demos can point at a recorded copy.
+_API_BASE = os.environ.get("WORLD_BANK_API_BASE", "https://api.worldbank.org/v2").rstrip("/")
 _WDI_SOURCE_ID = 2
 _PAGE_SIZE_CATALOGUE = 500
 _PAGE_SIZE_DATA = 1000

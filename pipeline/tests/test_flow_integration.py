@@ -73,11 +73,22 @@ def world_bank(monkeypatch):
     return api
 
 
+MODE = {"direct": False}
+
+
+@pytest.fixture(params=["prefect", "direct"], autouse=True)
+def run_mode(request):
+    """Every scenario runs twice: as a Prefect flow, and directly without Prefect."""
+    MODE["direct"] = request.param == "direct"
+    yield request.param
+    MODE["direct"] = False
+
+
 def run(source_id: str = "WorldBank", **kwargs) -> dict:
-    from pipeline.flows.ingest_flow import ingest_flow
+    from pipeline.flows.ingest_flow import ingest_flow, run_ingest
     from pipeline.registry import source_registry
     source_registry._connector_cache.clear()
-    return ingest_flow(source_id, **kwargs)
+    return (run_ingest if MODE["direct"] else ingest_flow)(source_id, **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -219,6 +230,50 @@ def test_run_stops_early_when_the_source_is_down(world_bank):
     assert len(summary) == 3 and all(v["status"] == "failed" for v in summary.values())
     status, message = query("SELECT status, error_message FROM cdm.pipeline_run_log ORDER BY id DESC LIMIT 1")[0]
     assert status == "failed" and "7 indicators not attempted" in message
+
+
+def test_direct_mode_retries_a_step_like_prefect_would(world_bank, monkeypatch, run_mode):
+    if run_mode != "direct":
+        pytest.skip("retry behaviour under Prefect is Prefect's own")
+    from pipeline.flows import ingest_flow as flow_module
+    monkeypatch.setattr(flow_module.task_fetch, "retries", 2)
+    monkeypatch.setattr(flow_module.task_fetch, "retry_delay_seconds", 0)
+    original, calls = WorldBankConnector._http_get, {"n": 0}
+
+    def fails_twice(self, url, **kwargs):
+        if f"/indicator/{GDP_CODE}" in url:
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise RuntimeError("temporary glitch")
+        return original(self, url, **kwargs)
+
+    monkeypatch.setattr(WorldBankConnector, "_http_get", fails_twice)
+    assert run()["WB_NY_GDP_MKTP_KD_ZG"]["status"] == "success" and calls["n"] == 3
+
+
+def test_changed_description_is_republished_even_when_numbers_are_not(world_bank, fake_ckan):
+    """First pass loads featured indicators without descriptions; the full
+    pass that follows learns them from the catalogue and must publish them."""
+    execute("""
+        UPDATE cdm.data_sources SET indicators = CAST(:ind AS jsonb) WHERE source_id = 'WorldBank'
+    """, ind='[{"id": "WB_NY_GDP_MKTP_KD_ZG", "dataset_id": "NY.GDP.MKTP.KD.ZG", "domain": "economy", "name": "GDP growth (annual %)"}]')
+
+    run(featured_only=True)
+    assert "Definition of" not in fake_ckan.packages["ng-wb-ny-gdp-mktp-kd-zg"]["notes"]
+
+    summary = run()
+    assert summary["WB_NY_GDP_MKTP_KD_ZG"]["status"] == "success"
+    assert fake_ckan.packages["ng-wb-ny-gdp-mktp-kd-zg"]["notes"].startswith("Definition of GDP growth")
+    assert run()["WB_NY_GDP_MKTP_KD_ZG"]["status"] == "unchanged"
+
+
+def test_featured_only_skips_discovery(world_bank):
+    execute("""
+        UPDATE cdm.data_sources SET indicators = CAST(:ind AS jsonb) WHERE source_id = 'WorldBank'
+    """, ind='[{"id": "WB_NY_GDP_MKTP_KD_ZG", "dataset_id": "NY.GDP.MKTP.KD.ZG", "domain": "economy", "name": "GDP growth (annual %)"}]')
+    summary = run(featured_only=True)
+    assert list(summary) == ["WB_NY_GDP_MKTP_KD_ZG"]
+    assert not any("/source/2/indicators" in url for url in world_bank["requests"])
 
 
 # ── Regressions for bugs found in review ──────────────────────────────────────

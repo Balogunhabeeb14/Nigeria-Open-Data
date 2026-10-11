@@ -23,6 +23,12 @@ DEFAULT_SOURCES = [
         "schedule": "0 2 * * *",       # Daily @ 02:00 UTC
         "landing_dir": "nigeria_data_portal",
         "ingest_mode": "api",
+        "options": {
+            "publisher_id": "open-data-for-africa",
+            "publisher_title": "Open Data for Africa (African Development Bank)",
+            "source_name": "Nigeria Data Portal, Open Data for Africa",
+            "source_url": "https://nigeria.opendataforafrica.org/",
+        },
         "indicators": [
             {
                 "id": "GDP_REAL",
@@ -48,6 +54,12 @@ DEFAULT_SOURCES = [
         "schedule": "0 3 * * 1",       # Weekly on Mondays @ 03:00 UTC
         "landing_dir": "cbn",
         "ingest_mode": "file",
+        "options": {
+            "publisher_id": "central-bank-of-nigeria",
+            "publisher_title": "Central Bank of Nigeria",
+            "source_name": "Central Bank of Nigeria, Statistics",
+            "source_url": "https://statistics.cbn.gov.ng/",
+        },
         "indicators": [
             {
                 "id": "CBN_INTEREST_MPR",
@@ -102,6 +114,9 @@ DEFAULT_SOURCES = [
         "landing_dir": "world_bank",
         "ingest_mode": "api",
         "options": {
+            "publisher_id": "world-bank",
+            "publisher_title": "World Bank",
+            "publisher_description": "World Development Indicators, the World Bank's main collection of development data.",
             "source_name": "World Bank, World Development Indicators",
             "source_url": "https://data.worldbank.org/country/nigeria",
             "license_id": "cc-by",

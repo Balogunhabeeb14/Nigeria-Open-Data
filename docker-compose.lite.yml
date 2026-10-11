@@ -1,0 +1,60 @@
+# The whole platform in two containers, for trying it out or a small pilot:
+#
+#     docker compose -f docker-compose.lite.yml up --build
+#     open http://localhost:3000
+#
+# What runs: Postgres, and one app container holding the website, the API
+# with its built-in catalogue, and a loader that fills the catalogue from the
+# sources on first start and refreshes it weekly.
+#
+# What does not run: CKAN, Solr, Redis and the Prefect server. Use
+# docker-compose.yml for that set-up.
+#
+# Only the website's port is published. The pipeline API (port 8000) has
+# write endpoints without access control, so it stays inside the container;
+# the website proxies the read-only data routes it needs.
+
+volumes:
+  lite_pg_data:
+  lite_landing:
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: ${PIPELINE_DB_PASSWORD:-pipeline}
+      POSTGRES_DB: pipeline
+    volumes:
+      - lite_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      CATALOG_BACKEND: local
+      PIPELINE_DB_URL: postgresql://pipeline:${PIPELINE_DB_PASSWORD:-pipeline}@db:5432/pipeline
+      # The website reads the catalogue from the API beside it.
+      CATALOG_INTERNAL_URL: http://127.0.0.1:8000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      LANDING_ROOT: /app/data/raw
+      # First load: featured indicators, then other portals' listings, then
+      # the rest of the World Bank catalogue (about 1,500 requests).
+      BOOTSTRAP_SOURCES: ${BOOTSTRAP_SOURCES:-WorldBank}
+      BOOTSTRAP_HARVEST: ${BOOTSTRAP_HARVEST:-true}
+      BOOTSTRAP_FULL: ${BOOTSTRAP_FULL:-true}
+      REFRESH_HOURS: ${REFRESH_HOURS:-168}
+    ports:
+      - "3000:3000"
+    volumes:
+      - lite_landing:/app/data/raw
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped

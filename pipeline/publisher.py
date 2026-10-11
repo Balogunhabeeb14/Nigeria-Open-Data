@@ -48,17 +48,65 @@ _FIELDS = [
 _PRIMARY_KEY = ["geo_code", "period"]
 
 
+# Display names for topics whose slug does not title-case well.
+TOPIC_TITLES = {
+    "economy": "Economy",
+    "economics": "Economy",
+    "science-technology": "Science and Technology",
+    "labour": "Labour and Employment",
+    "infrastructure": "Infrastructure and Connectivity",
+    "government": "Government and Public Finance",
+    "society": "Society",
+    "population": "Population",
+}
+
+
+# One line per topic, shown on the site's topic cards.
+TOPIC_DESCRIPTIONS = {
+    "economy": "Growth, prices, trade, remittances, debt and public finance.",
+    "economics": "Growth, prices, trade, remittances, debt and public finance.",
+    "health": "Life expectancy, mortality, disease, nutrition, water and sanitation.",
+    "education": "Enrolment, literacy, attainment and spending on schooling.",
+    "population": "Population size, growth, fertility, age structure and urbanisation.",
+    "energy": "Electricity access, generation, fuels and renewable energy.",
+    "environment": "Land, forests, emissions, climate and natural resources.",
+    "agriculture": "Farm output, land use, rural development and food.",
+    "infrastructure": "Internet and mobile use, transport and other connections.",
+    "labour": "Employment, unemployment, wages and social protection.",
+    "poverty": "Poverty rates, inequality and living standards.",
+    "gender": "How outcomes differ between women and men.",
+    "government": "Budgets, spending, institutions and the public sector.",
+    "business": "Enterprise, investment and the private sector.",
+    "science-technology": "Research, innovation and technology.",
+    "society": "Social development and inclusion.",
+    "urban": "Cities, housing and urban services.",
+    "humanitarian": "Emergencies, displacement, food security and relief operations.",
+    "geography": "Boundaries, settlements and other map data.",
+}
+
+
 class PublishError(RuntimeError):
     """CKAN rejected or could not complete a publish."""
 
 
 def ckan_enabled() -> bool:
-    """True when a CKAN API key is configured, so publishing can happen."""
-    return bool(settings.ckan_key())
+    """True when there is a catalogue to publish to.
+
+    That is either the built-in one (CATALOG_BACKEND=local) or a CKAN server
+    with an API key configured.
+    """
+    return settings.catalog_backend == "local" or bool(settings.ckan_key())
 
 
-def _get_ckan_client() -> RemoteCKAN | None:
-    """Return an authenticated CKAN client, or None if no API key is configured."""
+def _get_ckan_client():
+    """Return the catalogue to publish to, or None if none is configured.
+
+    The built-in catalogue takes the same calls as a CKAN client, so callers
+    do not need to know which one they have.
+    """
+    if settings.catalog_backend == "local":
+        from pipeline.catalog.local import LocalCatalog
+        return LocalCatalog()
     key = settings.ckan_key()
     if not key:
         logger.warning("CKAN_API_KEY not set — CKAN publishing is disabled.")
@@ -164,19 +212,15 @@ def _build_package_fields(
     )
     licence_title = options.get("license_title") or "Not specified by the source"
 
+    # Plain text, no markup: the description is shown as-is by the frontend,
+    # by CKAN and in API responses. Structured provenance goes in `extras`.
     parts: list[str] = []
     if indicator_config.get("description"):
         parts.append(indicator_config["description"].strip())
-    parts.append(
-        f"**Source:** {source_name}"
-        + (f" ([original]({source_url}))" if source_url else "")
-        + f"  \n**Licence:** {licence_title}"
-        + (f"  \n**Unit:** {unit}" if unit else "")
-        + (f"  \n**Coverage:** {first_period} to {last_period}" if first_period else "")
-        + f"  \n**Observations:** {len(rows):,}"
-    )
+    provenance = f"Source: {source_name}."
     if indicator_config.get("source_organization"):
-        parts.append(f"**Original compiler:** {indicator_config['source_organization']}")
+        provenance += f" Originally compiled by: {indicator_config['source_organization'].rstrip('.')}."
+    parts.append(provenance)
     parts.append(
         "Collected and republished by Naija Open Data, an independent open-source "
         "project. Figures are the source's own; check the original before citing."
@@ -236,10 +280,19 @@ def _upsert_package(
     except NotFound:
         existing = None
 
+    # File the dataset under whoever produced the numbers, so "Publishers" on
+    # the site lists real publishers. Falls back to the platform's own.
+    owner_org = ensure_organization(
+        ckan,
+        options.get("publisher_id") or settings.ckan_org_id,
+        options.get("publisher_title") or "Naija Open Data",
+        options.get("publisher_description") or "",
+    )
+
     def write(payload: dict) -> dict:
         if existing is None:
             logger.info("Creating CKAN dataset: %s", name)
-            return ckan.action.package_create(name=name, owner_org=settings.ckan_org_id, **payload)
+            return ckan.action.package_create(name=name, owner_org=owner_org, **payload)
         # package_patch changes only the fields sent. package_update would
         # drop anything left out, including the data resource.
         ckan.action.package_patch(id=existing["id"], **payload)
@@ -254,6 +307,30 @@ def _upsert_package(
         # A dataset without a topic is better than no dataset.
         logger.warning("Publishing %s without a topic (group rejected: %s)", name, exc)
         return write({k: v for k, v in fields.items() if k != "groups"})
+
+
+def ensure_organization(ckan, name: str, title: str, description: str = "") -> str:
+    """Return an organisation (publisher) to file datasets under. Best effort.
+
+    Creates it if missing. If that is not allowed, falls back to the default
+    organisation so publishing still goes ahead.
+    """
+    name = slugify(name)
+    try:
+        ckan.action.organization_show(id=name)
+        return name
+    except NotFound:
+        pass
+    except Exception as exc:
+        logger.warning("Could not look up organisation '%s': %s", name, exc)
+        return settings.ckan_org_id
+    try:
+        ckan.action.organization_create(name=name, title=title, description=description)
+        logger.info("Created organisation (publisher): %s", name)
+        return name
+    except Exception as exc:
+        logger.warning("Could not create organisation '%s' (%s); using default.", name, exc)
+        return settings.ckan_org_id
 
 
 def _ensure_group(ckan: RemoteCKAN, domain: str | None) -> str | None:
@@ -275,7 +352,11 @@ def _ensure_group(ckan: RemoteCKAN, domain: str | None) -> str | None:
         logger.warning("Could not look up CKAN group '%s': %s", name, exc)
         return None
     try:
-        ckan.action.group_create(name=name, title=domain.replace("-", " ").title())
+        ckan.action.group_create(
+            name=name,
+            title=TOPIC_TITLES.get(name) or domain.replace("-", " ").title(),
+            description=TOPIC_DESCRIPTIONS.get(name, ""),
+        )
         logger.info("Created CKAN group (topic): %s", name)
         return name
     except Exception as exc:

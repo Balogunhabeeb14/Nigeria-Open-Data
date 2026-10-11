@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Download, Database, Search } from "lucide-react";
 import Link from "next/link";
-import { fetchDatasets, fetchOrganizations, fetchGroups } from "@/lib/ckan";
+import { fetchDatasetPage, fetchOrganizations, fetchGroups } from "@/lib/ckan";
 import DatasetFilters from "@/components/DatasetFilters";
 import DatasetSearch from "@/components/DatasetSearch";
 import DownloadButton from "@/components/DownloadButton";
@@ -25,7 +25,9 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   };
 }
 
-export default async function DatasetsPage({ searchParams }: { searchParams: Promise<{ format?: string, publisher?: string, q?: string, groups?: string }> }) {
+const PAGE_SIZE = 20;
+
+export default async function DatasetsPage({ searchParams }: { searchParams: Promise<{ format?: string, publisher?: string, q?: string, groups?: string, page?: string }> }) {
   const resolvedParams = await searchParams;
   const format = resolvedParams.format || "";
   const publisher = resolvedParams.publisher || "";
@@ -39,8 +41,24 @@ export default async function DatasetsPage({ searchParams }: { searchParams: Pro
   if (group) fqParts.push(`groups:${group}`);
   const filterQuery = fqParts.join(' AND ');
 
-  // Fetch REAL data from the CKAN backend
-  const datasets = await fetchDatasets(query, 50, filterQuery);
+  const requestedPage = Math.max(1, Number.parseInt(resolvedParams.page || "1", 10) || 1);
+
+  // One page of results, plus the total across all pages
+  const { count: total, results: datasets } = await fetchDatasetPage(
+    query, PAGE_SIZE, (requestedPage - 1) * PAGE_SIZE, filterQuery,
+  );
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(requestedPage, pageCount);
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (format) params.set("format", format);
+    if (publisher) params.set("publisher", publisher);
+    if (group) params.set("groups", group);
+    if (target > 1) params.set("page", String(target));
+    const qs = params.toString();
+    return qs ? `/datasets?${qs}` : "/datasets";
+  };
   const organizations = await fetchOrganizations();
   const allGroups = await fetchGroups();
 
@@ -79,7 +97,7 @@ export default async function DatasetsPage({ searchParams }: { searchParams: Pro
             </div>
             <div className="text-sm text-slate-500 font-medium bg-slate-100 px-4 py-2 rounded-full inline-flex w-fit items-center gap-2">
               <Database className="w-4 h-4" />
-              {datasets.length} {datasets.length === 1 ? "dataset" : "datasets"} found
+              {total.toLocaleString("en-GB")} {total === 1 ? "dataset" : "datasets"} found
             </div>
           </div>
 
@@ -109,7 +127,7 @@ export default async function DatasetsPage({ searchParams }: { searchParams: Pro
                     : "No datasets match your criteria. Try resetting the filters or broadening your search parameters to discover public data."
                   }
                 </p>
-                {(query || format || publisher) && (
+                {(query || format || publisher || group) && (
                   <Link
                     href="/datasets"
                     className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium transition-colors"
@@ -127,10 +145,10 @@ export default async function DatasetsPage({ searchParams }: { searchParams: Pro
                         {dataset.title || dataset.name}
                       </Link>
                       <p className="text-sm text-slate-500 font-medium mb-3">
-                        Published by <span className="text-slate-700">{dataset.organization?.title || "Unknown"}</span> · {new Date(dataset.metadata_modified).toLocaleDateString()}
+                        Published by <span className="text-slate-700">{dataset.organization?.title || "Unknown"}</span> · {new Date(dataset.metadata_modified).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
                       </p>
                       <p className="text-slate-600 leading-relaxed mb-4 line-clamp-2">
-                        {dataset.notes || "No description provided."}
+                        {(dataset.notes || "").split(/\n\s*\n/)[0] || "No description provided."}
                       </p>
                     </div>
                     <div className="flex-shrink-0 flex gap-2 flex-wrap">
@@ -157,6 +175,24 @@ export default async function DatasetsPage({ searchParams }: { searchParams: Pro
               ))
             )}
           </div>
+
+          {pageCount > 1 && (
+            <nav className="mt-8 flex items-center justify-between gap-4" aria-label="Pagination">
+              {page > 1 ? (
+                <Link href={pageHref(page - 1)} rel="prev" className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-primary-500 hover:text-primary-700 transition-colors">
+                  ← Previous
+                </Link>
+              ) : <span />}
+              <p className="text-sm text-slate-500">
+                Page {page} of {pageCount.toLocaleString("en-GB")}
+              </p>
+              {page < pageCount ? (
+                <Link href={pageHref(page + 1)} rel="next" className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-primary-500 hover:text-primary-700 transition-colors">
+                  Next →
+                </Link>
+              ) : <span />}
+            </nav>
+          )}
         </main>
       </div>
     </div>

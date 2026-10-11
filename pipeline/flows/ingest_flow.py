@@ -17,8 +17,11 @@ Three rules keep it dependable:
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
+import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import cast
 
@@ -36,6 +39,41 @@ logger = logging.getLogger(__name__)
 # these the period watermark is not used as a filter: when the file changes,
 # all of it is reprocessed so revised rows are picked up.
 _FILE_MODES = frozenset({"file", "document"})
+
+
+# ── Running with or without Prefect ───────────────────────────────────────────
+# Under Prefect (the scheduled deployments) each step below is a tracked task.
+# `run_ingest()` runs the very same steps as plain function calls, for places
+# with no Prefect server: the standalone app's loader, scripts, notebooks.
+_DIRECT: contextvars.ContextVar[bool] = contextvars.ContextVar("ingest_direct", default=False)
+
+
+def _log():
+    """The Prefect run logger when inside a run, else this module's logger."""
+    if not _DIRECT.get():
+        try:
+            return get_run_logger()
+        except Exception:
+            pass
+    return logger
+
+
+def _run(step, *args):
+    """Call a pipeline step: as a Prefect task, or directly with its retries."""
+    if not _DIRECT.get():
+        return step(*args)
+
+    retries = int(step.retries or 0)
+    delay = step.retry_delay_seconds or 0
+    for attempt in range(retries + 1):
+        try:
+            return step.fn(*args)
+        except Exception as exc:
+            if attempt == retries:
+                raise
+            wait = delay[min(attempt, len(delay) - 1)] if isinstance(delay, (list, tuple)) else delay
+            logger.warning("%s failed (%s); retry %d of %d in %ss", step.name, exc, attempt + 1, retries, wait)
+            time.sleep(float(wait))
 
 
 @dataclass
@@ -66,7 +104,7 @@ def task_fetch(
 ) -> FetchOutcome:
     from pipeline.db.warehouse import get_watermark
 
-    log = get_run_logger()
+    log = _log()
     indicator_id = indicator_config["id"]
 
     if start_period:
@@ -102,7 +140,7 @@ def task_validate(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
     """Run quality checks. Raises RuntimeError on CRITICAL failures (halts the task)."""
-    log = get_run_logger()
+    log = _log()
     runner = QualityRunner(source=source_id, indicator_id=indicator_config["id"])
     report = runner.run(df, indicator_config)
     log.info(report.summary())
@@ -129,7 +167,7 @@ def task_stage(
     """Insert raw rows into cdm.stage_raw_observations for full audit trail."""
     from pipeline.db.warehouse import load_to_stage
 
-    log = get_run_logger()
+    log = _log()
     n = load_to_stage(
         df,
         source_id,
@@ -147,7 +185,7 @@ def task_transform(
     df: pd.DataFrame,
 ) -> list:
     """Map raw DataFrame → CDMRecord list using the registered transform function."""
-    log = get_run_logger()
+    log = _log()
     transform_fn = source_registry.get_transform(source_id)
     records = transform_fn(df, indicator_config)
     log.info("[%s/%s] Transformed %d CDM records", source_id, indicator_config["id"], len(records))
@@ -159,7 +197,7 @@ def task_upsert(source_id: str, indicator_id: str, cdm_records: list) -> int:
     """Upsert CDMRecords to cdm.indicator_observation (idempotent, ON CONFLICT)."""
     from pipeline.db.warehouse import upsert_to_cdm
 
-    log = get_run_logger()
+    log = _log()
     n = upsert_to_cdm(cdm_records)
     log.info("[%s/%s] Upserted %d CDM rows", source_id, indicator_id, n)
     return n
@@ -171,12 +209,12 @@ def task_publish(source_id: str, indicator_config: dict, source_options: dict) -
 
     Raises on failure so Prefect retries; the flow records a final failure.
     """
-    log = get_run_logger()
+    log = _log()
     state = publish_indicator_to_ckan(source_id, indicator_config, source_options=source_options)
     if state == PUBLISHED:
-        log.info("[%s/%s] Published to CKAN", source_id, indicator_config["id"])
+        log.info("[%s/%s] Published to the catalogue", source_id, indicator_config["id"])
     else:
-        log.info("[%s/%s] CKAN publish skipped (no API key)", source_id, indicator_config["id"])
+        log.info("[%s/%s] Publish skipped (no catalogue configured)", source_id, indicator_config["id"])
     return state
 
 
@@ -185,7 +223,7 @@ def task_register_document(source_id: str, indicator_id: str, file_meta: dict | 
     """Register the document metadata into cdm.dataset_registry."""
     from pipeline.db.warehouse import register_document
 
-    log = get_run_logger()
+    log = _log()
     if file_meta:
         register_document(source_id, file_meta)
         log.info("[%s/%s] Registered document: %s", source_id, indicator_id, file_meta.get("file_name"))
@@ -196,7 +234,7 @@ def task_register_document(source_id: str, indicator_id: str, file_meta: dict | 
 def _publish_safely(source_id: str, indicator_config: dict, source_options: dict, log) -> str:
     """Publish and turn a final failure into a state instead of an exception."""
     try:
-        return cast(str, task_publish(source_id, indicator_config, source_options))
+        return cast(str, _run(task_publish, source_id, indicator_config, source_options))
     except Exception as exc:
         log.error("[%s/%s] CKAN publish failed: %s", source_id, indicator_config["id"], exc)
         return FAILED
@@ -209,6 +247,7 @@ def _publish_safely(source_id: str, indicator_config: dict, source_options: dict
 def ingest_flow(
     source_id: str,
     start_period: str | None = None,
+    featured_only: bool = False,
 ) -> dict:
     """Run the full ingestion pipeline for all indicators of a registered source.
 
@@ -218,6 +257,8 @@ def ingest_flow(
                       unchanged-data shortcut, and fetches from this period
                       onward. e.g. '2020', '2020Q1', '2020-01'.
                       Leave None for normal incremental mode.
+        featured_only: Process just the indicators listed with the source and
+                      skip discovery. A fast first pass before a full run.
 
     Returns:
         Summary dict: {indicator_id: {status, rows, ...}} per indicator.
@@ -231,7 +272,7 @@ def ingest_flow(
         update_manifest,
     )
 
-    log = get_run_logger()
+    log = _log()
     log.info("=== Ingest flow: source=%s start_period=%s ===", source_id, start_period)
 
     # Ensure CDM schema exists (idempotent — safe to call on every run)
@@ -251,7 +292,10 @@ def ingest_flow(
         # Connectors that can list what their source offers add to the
         # configured indicators here (see BaseConnector.expand_indicators).
         connector = source_registry.get_connector(source_id)
-        indicators = connector.expand_indicators() or source_config["indicators"]
+        indicators = (
+            source_config["indicators"] if featured_only
+            else connector.expand_indicators() or source_config["indicators"]
+        )
         log.info("[%s] %d indicator(s) to process", source_id, len(indicators))
 
         # Circuit breaker: if a source fails this many indicators in a row
@@ -279,12 +323,16 @@ def ingest_flow(
                 previous = get_manifest(source_id, indicator_id) or {}
                 outcome = cast(
                     FetchOutcome,
-                    task_fetch(source_id, indicator_config, start_period, ingest_mode),
+                    _run(task_fetch, source_id, indicator_config, start_period, ingest_mode),
                 )
                 raw_df = outcome.df
+                # What gets published is the rows plus how they are described.
+                # Folding the description in means a corrected name, unit or
+                # licence is republished even when the numbers are the same.
+                content_hash = _with_metadata(outcome.content_hash, indicator_config, source_options)
 
                 if is_document:
-                    task_register_document(source_id, indicator_id, outcome.file_meta)
+                    _run(task_register_document, source_id, indicator_id, outcome.file_meta)
 
                 if raw_df.empty:
                     log.info("[%s/%s] No tabular data extracted.", source_id, indicator_id)
@@ -299,8 +347,8 @@ def ingest_flow(
                 unchanged = (
                     not start_period
                     and previous.get("status") == "success"
-                    and outcome.content_hash is not None
-                    and previous.get("content_hash") == outcome.content_hash
+                    and content_hash is not None
+                    and previous.get("content_hash") == content_hash
                 )
                 needs_publish = ckan_enabled() and previous.get("publish_state") != PUBLISHED
 
@@ -322,14 +370,14 @@ def ingest_flow(
                     consecutive_failures = 0
                     continue
 
-                clean_df = task_validate(source_id, indicator_config, raw_df)
+                clean_df = _run(task_validate, source_id, indicator_config, raw_df)
 
-                n_staged = task_stage(source_id, indicator_config, clean_df)
+                n_staged = _run(task_stage, source_id, indicator_config, clean_df)
                 total_staged += n_staged
 
-                cdm_records = task_transform(source_id, indicator_config, clean_df)
+                cdm_records = _run(task_transform, source_id, indicator_config, clean_df)
 
-                n_cdm = task_upsert(source_id, indicator_id, cdm_records)
+                n_cdm = _run(task_upsert, source_id, indicator_id, cdm_records)
                 total_cdm += n_cdm
 
                 publish_state = (
@@ -342,7 +390,7 @@ def ingest_flow(
                     source_key=indicator_id,
                     last_period=_extract_watermark(clean_df),
                     row_count=n_cdm,
-                    content_hash=outcome.content_hash,
+                    content_hash=content_hash,
                     publish_state=publish_state,
                 )
 
@@ -389,9 +437,38 @@ def ingest_flow(
     return summary
 
 
+def run_ingest(
+    source_id: str,
+    start_period: str | None = None,
+    featured_only: bool = False,
+) -> dict:
+    """Run the ingestion pipeline without Prefect. Same steps, same result.
+
+    Nothing is orchestrated or recorded by Prefect; progress goes to the
+    normal Python log and to cdm.pipeline_run_log / cdm.ingest_manifest.
+    """
+    token = _DIRECT.set(True)
+    try:
+        return ingest_flow.fn(source_id, start_period=start_period, featured_only=featured_only)
+    finally:
+        _DIRECT.reset(token)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
+
+_DESCRIPTIVE_KEYS = ("name", "description", "unit", "domain", "source_organization", "featured", "source_url")
+
+
+def _with_metadata(data_hash: str | None, indicator_config: dict, source_options: dict) -> str | None:
+    """Combine the data hash with a fingerprint of the published description."""
+    if data_hash is None:
+        return None
+    described = {k: indicator_config.get(k) for k in _DESCRIPTIVE_KEYS}
+    payload = json.dumps([data_hash, described, source_options], sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
 
 def _extract_watermark(df: pd.DataFrame) -> str | None:
     """Return the latest period in the data, used as the next run's `since`.
@@ -423,9 +500,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run ingestion for a specific source")
     parser.add_argument("source_id", help="Source ID in cdm.data_sources (e.g. WorldBank, CBN)")
     parser.add_argument("--start-period", default=None, help="Backfill from this period (e.g. 2020, 2020Q1)")
+    parser.add_argument("--featured-only", action="store_true", help="Only the listed indicators; skip discovery")
+    parser.add_argument("--no-prefect", action="store_true", help="Run directly, without a Prefect server")
     args = parser.parse_args()
 
-    result = ingest_flow(args.source_id, start_period=args.start_period)
+    runner = run_ingest if args.no_prefect else ingest_flow
+    result = runner(args.source_id, start_period=args.start_period, featured_only=args.featured_only)
     counts: dict[str, int] = {}
     for item in result.values():
         counts[item["status"]] = counts.get(item["status"], 0) + 1

@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+// Inter is bundled with the site (all its language subsets, so Yoruba, Igbo
+// and Hausa letters use it too). Nothing is fetched from Google, at build
+// time or in the visitor's browser.
+import "@fontsource-variable/inter";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -40,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} antialiased`}>
+    <html lang="en" className="antialiased">
       <body className="min-h-screen bg-slate-50 flex flex-col">
         <Header />
         <main className="flex-grow">

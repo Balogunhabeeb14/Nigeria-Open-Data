@@ -150,3 +150,51 @@ UPDATE cdm.ingest_manifest
 SET    content_hash = substr(last_period, 6),
        last_period  = NULL
 WHERE  last_period LIKE 'hash:%';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Built-in catalogue (CATALOG_BACKEND=local)
+--
+-- Lets the platform run without CKAN: the publisher and harvester write here
+-- through pipeline/catalog/local.py, and pipeline/catalog/api.py serves it
+-- back in the same shape as CKAN's Action API, so the frontend is unchanged.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cdm.catalog_dataset (
+    id                TEXT        PRIMARY KEY,
+    name              TEXT        UNIQUE NOT NULL,     -- URL slug
+    title             TEXT        NOT NULL DEFAULT '',
+    notes             TEXT        NOT NULL DEFAULT '',
+    owner_org         TEXT,
+    groups            TEXT[]      NOT NULL DEFAULT '{}',
+    formats           TEXT[]      NOT NULL DEFAULT '{}', -- upper-cased resource formats
+    featured          BOOLEAN     NOT NULL DEFAULT false,
+    data              JSONB       NOT NULL,              -- the full dataset record
+    metadata_created  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    metadata_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    search            tsvector
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_dataset_search ON cdm.catalog_dataset USING gin(search);
+CREATE INDEX IF NOT EXISTS idx_catalog_dataset_groups ON cdm.catalog_dataset USING gin(groups);
+CREATE INDEX IF NOT EXISTS idx_catalog_dataset_org    ON cdm.catalog_dataset (owner_org);
+
+-- Topics (kind='group') and publishers (kind='organization')
+CREATE TABLE IF NOT EXISTS cdm.catalog_group (
+    kind        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    title       TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (kind, name)
+);
+
+-- One row per data table attached to a dataset, and the rows themselves.
+CREATE TABLE IF NOT EXISTS cdm.catalog_table (
+    resource_id TEXT  PRIMARY KEY,
+    dataset_id  TEXT  NOT NULL REFERENCES cdm.catalog_dataset(id) ON DELETE CASCADE,
+    fields      JSONB NOT NULL,
+    primary_key JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+CREATE TABLE IF NOT EXISTS cdm.catalog_row (
+    resource_id TEXT  NOT NULL REFERENCES cdm.catalog_table(resource_id) ON DELETE CASCADE,
+    row_key     TEXT  NOT NULL,
+    data        JSONB NOT NULL,
+    PRIMARY KEY (resource_id, row_key)
+);

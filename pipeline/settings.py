@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     ckan_api_key: SecretStr | None = None
     ckan_org_id: str = "nigeriaopendata"
 
+    # ── Catalogue backend ─────────────────────────────────────────────────────
+    # 'ckan'  : publish to a CKAN server (needs CKAN_API_KEY).
+    # 'local' : publish to the built-in catalogue in the pipeline database and
+    #           serve it from this app. No CKAN, Solr or Redis needed.
+    catalog_backend: str = "ckan"
+
     # ── Prefect orchestration ─────────────────────────────────────────────────
     prefect_api_url: str = "http://prefect-server:4200/api"
 
@@ -64,6 +70,14 @@ class Settings(BaseSettings):
         if upper not in valid:
             raise ValueError(f"log_level must be one of {valid}, got '{v}'")
         return upper
+
+    @field_validator("catalog_backend")
+    @classmethod
+    def validate_catalog_backend(cls, v: str) -> str:
+        value = v.strip().lower()
+        if value not in {"ckan", "local"}:
+            raise ValueError(f"catalog_backend must be 'ckan' or 'local', got '{v}'")
+        return value
 
     @field_validator("landing_root", mode="before")
     @classmethod

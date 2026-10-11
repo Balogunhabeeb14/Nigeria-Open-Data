@@ -20,7 +20,7 @@ import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from pipeline.connectors.base import USER_AGENT
-from pipeline.publisher import _clean_tag, _ensure_group, slugify
+from pipeline.publisher import _clean_tag, _ensure_group, ensure_organization, slugify
 from pipeline.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -131,11 +131,11 @@ def map_dataset(portal: dict, remote: dict) -> dict | None:
     licence = remote.get("license_title") or remote.get("license_id") or "Not specified by the source"
 
     notes = (remote.get("notes") or "").strip()
+    # Plain text, no markup (see publisher._build_package_fields).
     credit = (
-        f"**Listed from:** [{portal['title']}]({remote_page})"
-        + (f"  \n**Original publisher:** {publisher}" if publisher else "")
-        + f"  \n**Licence:** {licence}"
-        + "\n\nThe files are hosted by the original portal. Naija Open Data lists "
+        f"Listed from {portal['title']}."
+        + (f" Original publisher: {publisher}." if publisher else "")
+        + " The files are hosted by the original portal. Naija Open Data lists "
           "this dataset so it can be found in one place; it does not hold a copy."
     )
 
@@ -174,27 +174,11 @@ def map_dataset(portal: dict, remote: dict) -> dict | None:
 # ── Local side ────────────────────────────────────────────────────────────────
 
 def _ensure_org(ckan, portal: dict) -> str:
-    """Return the organisation to file a portal's datasets under.
-
-    Tries one organisation per portal so users can filter by where a listing
-    came from. Falls back to the platform's default organisation.
-    """
-    name = slugify(portal["id"])
-    try:
-        ckan.action.organization_show(id=name)
-        return name
-    except Exception:
-        pass
-    try:
-        ckan.action.organization_create(
-            name=name,
-            title=portal["title"],
-            description=f"Datasets listed from {portal['title']} ({portal['base_url']}).",
-        )
-        return name
-    except Exception as exc:
-        logger.warning("Could not create organisation '%s' (%s); using default.", name, exc)
-        return settings.ckan_org_id
+    """One organisation per portal, so users can filter by where a listing came from."""
+    return ensure_organization(
+        ckan, portal["id"], portal["title"],
+        f"Datasets listed from {portal['title']} ({portal['base_url']}).",
+    )
 
 
 def harvest_portal(
