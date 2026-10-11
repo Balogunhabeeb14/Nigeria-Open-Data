@@ -32,7 +32,11 @@ export default function DataPreview({ table }: Props) {
   );
 
   const rows = hasStandardShape
-    ? [...table.records].sort((a, b) => String(b.period).localeCompare(String(a.period)))
+    ? [...table.records].sort(
+        (a, b) =>
+          String(b.period).localeCompare(String(a.period)) ||
+          String(a.geo_name ?? "").localeCompare(String(b.geo_name ?? "")),
+      )
     : table.records;
 
   const numeric = new Set(

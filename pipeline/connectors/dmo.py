@@ -14,8 +14,10 @@ done to stay dependable:
 
 * Files are parsed by content, not layout. Whatever the format (PDF, Excel or
   a web page), each line is searched for a state's name followed by an
-  amount. A document that does not yield nearly all 37 lines is rejected and
-  reported instead of being loaded half-read.
+  amount.
+* Every reading is cross-checked. The state figures must add up to the total
+  the document itself prints. A quarter that fails is left out and reported;
+  it is never published half-read.
 * Past quarters are kept in the landing folder and not downloaded again; only
   the newest few are re-fetched, because the DMO marks recent figures
   provisional and may revise them.
@@ -45,7 +47,10 @@ _MIN_STATES = 34             # of 37; fewer means the document was not read prop
 _TITLE = re.compile(r"domestic\s+debt.*?as\s+at\s+(?P<date>[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})", re.IGNORECASE)
 _SLUG = re.compile(r"domestic-debt", re.IGNORECASE)
 _AMOUNT = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w])|(?<![\w.,])\d{7,}(?:\.\d+)?(?![\w,])")
+_WHOLE_AMOUNT = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{7,}(?:\.\d+)?")
+_FRAGMENT = re.compile(r"[\d,.]+")
 _QUARTER_ENDS = {3: 1, 6: 2, 9: 3, 12: 4}
+_TOLERANCE = 0.005           # states must add up to the document's total within 0.5%
 
 
 class DMOParseError(RuntimeError):
@@ -128,12 +133,29 @@ def document_text(content: bytes) -> str:
     return "\n".join(rows) if rows else soup.get_text("\n")
 
 
+def read_amount(text: str) -> float | None:
+    """The amount written in a piece of a line, or None.
+
+    PDF text often arrives with a stray space inside a number, typically after
+    a narrow leading digit: '1 41,522,659,382.18' for 141,522,659,382.18.
+    Taking the last number-looking token would silently drop the leading
+    digits, so when everything in the text is number fragments they are
+    joined first, and the result must still be a well-formed amount.
+    """
+    tokens = text.split()
+    if len(tokens) > 1 and all(_FRAGMENT.fullmatch(t) for t in tokens):
+        joined = "".join(tokens)
+        if _WHOLE_AMOUNT.fullmatch(joined):
+            return float(joined.replace(",", ""))
+    numbers = _AMOUNT.findall(text)
+    return float(numbers[-1].replace(",", "")) if numbers else None
+
+
 def parse_state_amounts(text: str) -> tuple[dict[str, float], float | None]:
     """Read {state code: amount} and the stated total from a document's text.
 
     A line counts when it names a state (in any of its usual spellings) and
-    carries an amount after the name; the last amount on the line is taken,
-    which is the debt stock in the DMO's single-column layout.
+    carries an amount after the name.
     """
     amounts: dict[str, float] = {}
     total: float | None = None
@@ -141,22 +163,40 @@ def parse_state_amounts(text: str) -> tuple[dict[str, float], float | None]:
         line = " ".join(raw.split())
         if not line:
             continue
-        numbers = _AMOUNT.findall(line)
-        if not numbers:
-            continue
-        value = float(numbers[-1].replace(",", ""))
-        if re.match(r"^(grand\s+)?total\b", line, re.IGNORECASE):
-            total = value
+        heading = re.match(r"^(grand\s+)?total\b[\s:]*", line, re.IGNORECASE)
+        if heading:
+            value = read_amount(line[heading.end():])
+            if value is not None:
+                total = value
             continue
         upper = line.upper()
         for spelling, code in STATE_SPELLINGS:
             match = re.search(rf"(?<![A-Z]){re.escape(spelling.upper())}(?![A-Z])", upper)
-            if match and code not in amounts:
-                # The amount must come after the name, not be a serial number before it.
-                if _AMOUNT.search(line[match.end():]):
+            if match:
+                # Only what follows the name: a serial number before it is not an amount.
+                value = read_amount(line[match.end():])
+                if value is not None and code not in amounts:
                     amounts[code] = value
                 break
     return amounts, total
+
+
+def cross_check(amounts: dict[str, float], total: float | None) -> str | None:
+    """Why a reading cannot be trusted, or None if it can.
+
+    The states are read line by line and the total is read separately, so
+    agreement between the two is strong evidence every line was read right.
+    """
+    missing = sorted(STATES[c] for c in set(STATES) - set(amounts))
+    if len(amounts) < _MIN_STATES:
+        return f"only {len(amounts)} of {len(STATES)} states could be read"
+    computed = sum(amounts.values())
+    if total is None:
+        return None if not missing else f"no total line, and missing: {', '.join(missing)}"
+    if abs(computed - total) > _TOLERANCE * total:
+        return (f"states read add up to {computed:,.2f} but the document's total is {total:,.2f}"
+                + (f" (missing: {', '.join(missing)})" if missing else ""))
+    return None
 
 
 # ── Connector ─────────────────────────────────────────────────────────────────
@@ -187,19 +227,19 @@ class DMOConnector(BaseConnector):
             self._download_file(document["file_url"], path)
             time.sleep(float(self.options.get("request_delay_seconds") or 1))
         amounts, total = parse_state_amounts(document_text(path.read_bytes()))
-        if len(amounts) < _MIN_STATES:
+        problem = cross_check(amounts, total)
+        if problem:
             path.unlink(missing_ok=True)       # do not keep a file we could not read
-            raise DMOParseError(
-                f"{document['title']}: only {len(amounts)} of {len(STATES)} states could be read"
-            )
+            raise DMOParseError(f"{document['title']}: {problem}")
         return amounts, total
 
     def fetch(self, dataset_config: dict, since: str | None = None) -> pd.DataFrame:
         """One row per state and quarter (kind 'states'), or per quarter (kind 'total').
 
         Columns: REF_AREA, TIME_PERIOD, OBS_VALUE, SOURCE_URL, NOTE.
-        A document that cannot be read is skipped with a warning; the others
-        still load.
+        A quarter is loaded only if its document passes the cross-check
+        (see cross_check); otherwise it is skipped with a warning and the
+        others still load. A missing quarter is better than a wrong one.
         """
         kind = dataset_config.get("kind", "states")
         rows: list[dict] = []
@@ -214,20 +254,20 @@ class DMOConnector(BaseConnector):
                 continue
 
             computed = sum(amounts.values())
-            note = None
+            # Reaching here means the reading passed the cross-check; what is
+            # left to say is whether there was a total to check against.
             missing = sorted(STATES[c] for c in set(STATES) - set(amounts))
+            note = None
             if missing:
-                note = f"Not found in the source document for this quarter: {', '.join(missing)}."
-                logger.warning("DMO %s: %s", document["period"], note)
-            elif total and abs(computed - total) > 0.005 * total:
-                note = f"States read sum to {computed:,.2f}; the document's total line says {total:,.2f}."
-                logger.warning("DMO %s: %s", document["period"], note)
+                note = f"Not in the source document for this quarter: {', '.join(missing)}."
+            elif total is None:
+                note = "The source document has no total line to check the state figures against."
 
             if kind == "total":
                 rows.append({
                     "REF_AREA": "NG", "TIME_PERIOD": document["period"],
                     # The DMO's own total where it prints one and all states were read.
-                    "OBS_VALUE": total if (total and len(amounts) == len(STATES) and not note) else computed,
+                    "OBS_VALUE": total if total else computed,
                     "SOURCE_URL": document["url"], "NOTE": note,
                 })
             else:

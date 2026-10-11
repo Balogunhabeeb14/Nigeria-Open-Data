@@ -130,33 +130,40 @@ def check_dmo() -> list[dict]:
     rows.append({"check": "DMO document list", "status": OK,
                  "detail": f"{len(documents)} quarterly documents, {documents[-1]['period']} to {documents[0]['period']}"})
 
-    complete, partial, unreadable, mismatched = [], [], [], []
+    from pipeline.connectors.dmo import document_text
+
+    accepted, with_gaps, rejected, raw = [], [], [], []
     newest_detail = ""
-    for position, document in enumerate(documents):
+    for document in documents:
         try:
             amounts, total = connector.read_document(document)
         except Exception as exc:
-            unreadable.append(f"{document['period']} ({str(exc)[-60:]})")
+            rejected.append(f"{document['period']}: {str(exc).split(': ', 1)[-1][:150]}")
+            if len(raw) < 3:       # show how the text of a few failures actually reads
+                try:
+                    content = connector._http_get(document["file_url"]).content
+                    lines = [" ".join(l.split()) for l in document_text(content).splitlines()]
+                    wanted = [l for l in lines if any(k in l.upper() for k in ("LAGOS", "TOTAL", "KANO", "NIGER"))][:6]
+                    raw.append(f"{document['period']} ({content[:5]!r}, {len(lines)} lines): " + " // ".join(wanted))
+                except Exception as inner:
+                    raw.append(f"{document['period']}: could not re-read ({inner})")
             continue
-        (complete if len(amounts) == len(STATES) else partial).append(document["period"])
-        computed = sum(amounts.values())
-        if total and abs(computed - total) > 0.005 * total:
-            mismatched.append(f"{document['period']}: sum {computed:,.0f} vs total line {total:,.0f}")
-        if position == 0 or not newest_detail:
+        (accepted if len(amounts) == len(STATES) else with_gaps).append(document["period"])
+        if not newest_detail:
             top = sorted(amounts.items(), key=lambda kv: -kv[1])[:3]
-            newest_detail = (f"{document['period']}: {len(amounts)} states, sum {computed:,.2f}, "
+            newest_detail = (f"{document['period']}: {len(amounts)} states, sum {sum(amounts.values()):,.2f}, "
                              f"stated total {total if total is None else format(total, ',.2f')}; "
                              f"largest {[(STATES[c], round(v / 1e9, 1)) for c, v in top]} (billions of naira)")
-    rows.append({"check": "DMO newest readable document", "status": OK if newest_detail else FAIL, "detail": newest_detail or "none"})
-    rows.append({"check": "DMO documents read in full (37 of 37)", "status": OK if complete else FAIL,
-                 "detail": f"{len(complete)}: {complete[-1] if complete else ''} to {complete[0] if complete else ''}"})
-    if partial:
-        rows.append({"check": "DMO documents missing a state or two", "status": WARN, "detail": ", ".join(partial)})
-    if mismatched:
-        rows.append({"check": "DMO sum differs from total line", "status": WARN, "detail": "; ".join(mismatched[:6])})
-    if unreadable:
-        rows.append({"check": "DMO documents not readable", "status": WARN if complete else FAIL,
-                     "detail": f"{len(unreadable)}: " + "; ".join(unreadable[:8])})
+    rows.append({"check": "DMO newest accepted quarter", "status": OK if newest_detail else FAIL, "detail": newest_detail or "none"})
+    rows.append({"check": "DMO quarters accepted (figures add up to the document's total)",
+                 "status": OK if accepted else FAIL, "detail": f"{len(accepted)}: {', '.join(sorted(accepted))}"})
+    if with_gaps:
+        rows.append({"check": "DMO quarters accepted, document omits a state", "status": WARN, "detail": ", ".join(sorted(with_gaps))})
+    if rejected:
+        rows.append({"check": "DMO quarters left out", "status": WARN if accepted else FAIL,
+                     "detail": f"{len(rejected)}: " + " ;; ".join(rejected)})
+        for item in raw:
+            rows.append({"check": "DMO raw text of a failure", "status": WARN, "detail": item[:700]})
     return rows
 
 

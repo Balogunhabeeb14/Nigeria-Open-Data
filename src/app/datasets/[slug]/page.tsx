@@ -1,7 +1,8 @@
 import { fetchDataset, fetchDataTable, findDataResource, getExtra } from "@/lib/ckan";
-import { toSeries } from "@/lib/series";
+import { toSeries, toPlaceTable, periodLabel } from "@/lib/series";
 import SeriesChart from "@/components/data/SeriesChart";
 import DataPreview from "@/components/data/DataPreview";
+import PlaceExplorer from "@/components/data/PlaceExplorer";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Building2, Calendar, FileText, Database, LineChart } from "lucide-react";
@@ -54,6 +55,7 @@ export default async function DatasetDetail({ params }: { params: Promise<{ slug
   const dataResource = findDataResource(dataset);
   const table = dataResource?.id ? await fetchDataTable(dataResource.id) : null;
   const series = table ? toSeries(table) : null;
+  const placeTable = table && !series ? toPlaceTable(table) : null;
   const paragraphs = (dataset.notes || "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 
   return (
@@ -93,16 +95,26 @@ export default async function DatasetDetail({ params }: { params: Promise<{ slug
               {series ? (
                 <>
                   <p className="text-sm text-slate-500 mb-6">
-                    {[series.place, unit || series.unit, `${series.points[0].period} to ${series.points[series.points.length - 1].period}`]
+                    {[series.place, unit || series.unit, `${periodLabel(series.points[0].period)} to ${periodLabel(series.points[series.points.length - 1].period)}`]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
                   <SeriesChart series={series} label={dataset.title || dataset.name} />
                   <h3 className="text-base font-semibold text-slate-900 mt-8 mb-3">All values</h3>
                 </>
+              ) : placeTable ? (
+                <>
+                  <p className="text-sm text-slate-500 mb-6">
+                    {[`${placeTable.places.length} places`, unit || placeTable.unit, `${periodLabel(placeTable.periods[0])} to ${periodLabel(placeTable.periods[placeTable.periods.length - 1])}`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  <PlaceExplorer table={placeTable} label={dataset.title || dataset.name} />
+                  <h3 className="text-base font-semibold text-slate-900 mt-10 mb-3">All values</h3>
+                </>
               ) : (
                 <p className="text-sm text-slate-500 mb-6">
-                  This table covers more than one place or has no single time series, so it is shown as a table.
+                  This table has no single time series to draw, so it is shown as a table.
                 </p>
               )}
               <DataPreview table={table} />

@@ -12,8 +12,10 @@ from pipeline.connectors.dmo import (
     document_text,
     parse_index,
     parse_report_date,
+    cross_check,
     parse_state_amounts,
     quarter_of,
+    read_amount,
 )
 from pipeline.geo import STATES, state_code
 from pipeline.transforms.dmo_transform import transform
@@ -102,6 +104,44 @@ def test_other_spellings_and_look_alike_names():
     assert amounts == expected            # 'NIGERIA' is not Niger; nothing was overwritten
 
 
+@pytest.mark.parametrize("text,expected", [
+    ("141,522,659,382.18", 141_522_659_382.18),
+    ("1 41,522,659,382.18", 141_522_659_382.18),          # space after a narrow leading digit
+    ("1 ,041,357,087,184.18", 1_041_357_087_184.18),
+    ("1, 041,357,087,184.18", 1_041_357_087_184.18),
+    ("3,99 2,902,191,752.00", 3_992_902_191_752.00),
+    ("57,317,235,717.36", 57_317_235_717.36),
+    ("12.5 57,317,235,717.36", 57_317_235_717.36),         # two columns: do not glue them
+    ("PROVISIONAL", None),
+])
+def test_amounts_survive_stray_spaces_from_pdf_text(text, expected):
+    assert read_amount(text) == expected
+
+
+def test_real_lines_with_pdf_spacing_are_read_whole():
+    """Figures for 30 June 2025 as the DMO printed them; spacing as PDF extraction returns it."""
+    amounts, total = parse_state_amounts(
+        "23 KWARA 57,317,235,717.36\n24 LAGOS 1 ,041,357,087,184.18\n26 NIGER 1 41,522,659,382.18\n"
+        "27 OGUN 1 62,920,708,896.41\nTotal 3,963,929,1 64,593.54"
+    )
+    assert amounts == {"NG-KW": 57_317_235_717.36, "NG-LA": 1_041_357_087_184.18,
+                       "NG-NI": 141_522_659_382.18, "NG-OG": 162_920_708_896.41}
+    assert total == 3_963_929_164_593.54
+
+
+def test_cross_check_accepts_only_readings_that_add_up():
+    _, expected = document_lines()
+    total = sum(expected.values())
+    assert cross_check(expected, total) is None
+    assert cross_check(expected, None) is None                                  # nothing to check against, all states present
+    truncated = {**expected, "NG-LA": expected["NG-LA"] - 1_000_000_000_000 if expected["NG-LA"] > 1e12 else expected["NG-LA"] / 10}
+    assert "add up to" in cross_check(truncated, total)
+    without_kano = {c: v for c, v in expected.items() if c != "NG-KN"}
+    assert "Kano" in cross_check(without_kano, total)
+    assert cross_check(without_kano, sum(without_kano.values())) is None       # the document itself omits Kano
+    assert "only 3 of 37" in cross_check(dict(list(expected.items())[:3]), total)
+
+
 def test_serial_numbers_and_headings_are_not_amounts():
     amounts, total = parse_state_amounts("SN STATE DEBT STOCK (N)\n36 STATES AND THE FCT\n12 EDO\n13 EKITI 2,500,000.50")
     assert amounts == {"NG-EK": 2_500_000.50} and total is None
@@ -162,8 +202,8 @@ def test_fetch_builds_the_state_by_quarter_table_and_skips_what_it_cannot_read(c
     assert len(latest) == 37 and dict(zip(latest["REF_AREA"], latest["OBS_VALUE"])) == connector.expected
     assert latest["SOURCE_URL"].iloc[0].endswith("6079-states-and-fct-domestic-debt-stock-as-at-june-30-2026")
     older = df[df["TIME_PERIOD"] == "2024Q4"]
-    assert len(older) == 36 and "NG-KN" not in set(older["REF_AREA"])       # loaded, with the gap visible
-    assert "2026Q1" in caplog.text and "Kano" in caplog.text                # both problems were reported
+    assert len(older) == 36 and "NG-KN" not in set(older["REF_AREA"])       # the document itself omits Kano
+    assert "2026Q1" in caplog.text                                          # the unreadable quarter was reported
 
 
 def test_total_series_uses_the_documents_own_total_when_complete(connector):
@@ -172,7 +212,24 @@ def test_total_series_uses_the_documents_own_total_when_complete(connector):
     assert by_period["2026Q2"] == pytest.approx(sum(connector.expected.values()))
     assert set(df["REF_AREA"]) == {"NG"}
     incomplete = df[df["TIME_PERIOD"] == "2024Q4"].iloc[0]
-    assert "Kano" in incomplete["NOTE"]                                       # a total missing a state says so
+    assert "Kano" in incomplete["NOTE"]                                       # a total without a state says so
+
+
+def test_a_quarter_whose_figures_do_not_add_up_is_left_out(connector, monkeypatch, tmp_path):
+    """A misread line must never reach users: better a missing quarter than a wrong one."""
+    good, expected = document_lines()
+    lagos = f"{expected['NG-LA']:,.2f}"
+    damaged = good.replace(f"LAGOS {lagos}", f"LAGOS {lagos[2:]}")            # leading digits lost
+    assert damaged != good
+
+    def download(url, dest):
+        text = damaged if "6079" in url else good
+        dest.write_bytes(f"<html><body><pre>{text}</pre></body></html>".encode())
+        return dest
+
+    monkeypatch.setattr(connector, "_download_file", download)
+    df = connector.fetch({"kind": "states"})
+    assert "2026Q2" not in set(df["TIME_PERIOD"]) and {"2026Q1", "2024Q4"} <= set(df["TIME_PERIOD"])
 
 
 def test_past_quarters_are_not_downloaded_twice_but_recent_ones_are(connector, monkeypatch):
@@ -187,7 +244,7 @@ def test_past_quarters_are_not_downloaded_twice_but_recent_ones_are(connector, m
 
 
 def test_unreadable_document_raises_for_that_document_only(connector):
-    with pytest.raises(DMOParseError, match="only 0 of 37"):
+    with pytest.raises(DMOParseError, match="only 0 of 37 states"):
         connector.read_document({"title": "x", "period": "2026Q1", "file_url": "https://www.dmo.gov.ng/6001-x/file"})
 
 

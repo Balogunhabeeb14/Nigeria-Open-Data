@@ -40,14 +40,28 @@ export function toSeries(table: DataTable): Series | null {
   };
 }
 
-/** 1284 → '1,284', 12900 → '12.9K', 4200000 → '4.2M'. For axis ticks. */
-export function compact(value: number): string {
+/**
+ * 1284 → '1,284', 12900 → '12.9K', 4200000 → '4.2M'. For axis ticks and labels.
+ * `extraDigits` adds decimals when neighbouring values would otherwise read the same.
+ */
+export function compact(value: number, extraDigits: number = 0): string {
   const abs = Math.abs(value);
-  if (abs >= 1e12) return trim(value / 1e12) + "T";
-  if (abs >= 1e9) return trim(value / 1e9) + "B";
-  if (abs >= 1e6) return trim(value / 1e6) + "M";
-  if (abs >= 1e4) return trim(value / 1e3) + "K";
-  return full(value);
+  if (abs >= 1e12) return trim(value / 1e12, extraDigits) + "T";
+  if (abs >= 1e9) return trim(value / 1e9, extraDigits) + "B";
+  if (abs >= 1e6) return trim(value / 1e6, extraDigits) + "M";
+  if (abs >= 1e4) return trim(value / 1e3, extraDigits) + "K";
+  return extraDigits > 0
+    ? value.toLocaleString("en-GB", { maximumFractionDigits: Math.min(6, 2 + extraDigits) })
+    : full(value);
+}
+
+/** Tick labels that are all different: precision is raised until they are. */
+export function tickLabels(ticks: number[]): string[] {
+  for (let extra = 0; extra <= 3; extra++) {
+    const labels = ticks.map((t) => compact(t, extra));
+    if (new Set(labels).size === labels.length) return labels;
+  }
+  return ticks.map((t) => full(t));
 }
 
 /** A value with a sensible number of decimals for its size. For tables and tooltips. */
@@ -57,8 +71,8 @@ export function full(value: number): string {
   return value.toLocaleString("en-GB", { maximumFractionDigits: decimals });
 }
 
-function trim(value: number): string {
-  return value.toLocaleString("en-GB", { maximumFractionDigits: Math.abs(value) >= 100 ? 0 : 1 });
+function trim(value: number, extraDigits: number = 0): string {
+  return value.toLocaleString("en-GB", { maximumFractionDigits: (Math.abs(value) >= 100 ? 0 : 1) + extraDigits });
 }
 
 /** Round axis bounds and evenly spaced ticks covering [min, max]. */
@@ -79,4 +93,65 @@ export function niceTicks(min: number, max: number, target: number = 5): number[
     ticks.push(Number(v.toPrecision(12)));
   }
   return ticks;
+}
+
+export interface PlaceSeries {
+  code: string;
+  name: string;
+  points: SeriesPoint[];
+}
+
+export interface PlaceTable {
+  places: PlaceSeries[];
+  /** Every period present, oldest first. */
+  periods: string[];
+  unit: string;
+}
+
+/**
+ * Split a table that covers several places (states, say) into one series per
+ * place. Returns null for tables that cover a single place or lack the
+ * standard `period` and `value` columns.
+ */
+export function toPlaceTable(table: DataTable): PlaceTable | null {
+  const ids = new Set(table.fields.map((f) => f.id));
+  if (!ids.has("period") || !ids.has("value") || !ids.has("geo_code")) return null;
+
+  const byPlace = new Map<string, PlaceSeries>();
+  const periods = new Set<string>();
+  for (const r of table.records) {
+    if (r.value === null || r.value === "" || !Number.isFinite(Number(r.value))) continue;
+    const code = String(r.geo_code ?? "");
+    const period = String(r.period);
+    periods.add(period);
+    let place = byPlace.get(code);
+    if (!place) {
+      place = { code, name: String(r.geo_name ?? code), points: [] };
+      byPlace.set(code, place);
+    }
+    place.points.push({ period, value: Number(r.value) });
+  }
+  if (byPlace.size < 2) return null;
+
+  const places = [...byPlace.values()];
+  for (const place of places) place.points.sort((a, b) => a.period.localeCompare(b.period));
+  places.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    places,
+    periods: [...periods].sort(),
+    unit: String(table.records[0]?.unit ?? ""),
+  };
+}
+
+/** '2026Q1' → 'Q1 2026', '2024-03' → 'March 2024'; anything else unchanged. */
+export function periodLabel(period: string): string {
+  const quarter = /^(\d{4})Q([1-4])$/.exec(period);
+  if (quarter) return `Q${quarter[2]} ${quarter[1]}`;
+  const month = /^(\d{4})-(\d{2})$/.exec(period);
+  if (month) {
+    const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const name = names[Number(month[2]) - 1];
+    if (name) return `${name} ${month[1]}`;
+  }
+  return period;
 }

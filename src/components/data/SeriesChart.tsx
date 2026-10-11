@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Series } from "@/lib/series";
-import { compact, full, niceTicks } from "@/lib/series";
+import { compact, full, niceTicks, periodLabel, tickLabels } from "@/lib/series";
 
 // Width before the browser has measured the container (server render).
 const DEFAULT_WIDTH = 720;
@@ -53,6 +53,7 @@ export default function SeriesChart({ series, label }: Props) {
   const geometry = useMemo(() => {
     const values = points.map((p) => p.value);
     const ticks = niceTicks(Math.min(...values), Math.max(...values));
+    const tickText = tickLabels(ticks);
     const yMin = ticks[0];
     const yMax = ticks[ticks.length - 1];
     const innerW = WIDTH - MARGIN.left - MARGIN.right;
@@ -64,14 +65,14 @@ export default function SeriesChart({ series, label }: Props) {
     // A handful of period labels (fewer on a phone), always with first and last.
     const every = Math.max(1, Math.ceil(points.length / (narrow ? 3 : 6)));
     const xLabels = points
-      .map((p, i) => ({ i, text: p.period }))
+      .map((p, i) => ({ i, text: periodLabel(p.period) }))
       .filter(({ i }) => i % every === 0 && points.length - 1 - i >= every / 2);
-    xLabels.push({ i: points.length - 1, text: points[points.length - 1].period });
+    xLabels.push({ i: points.length - 1, text: periodLabel(points[points.length - 1].period) });
 
-    return { ticks, x, y, path, xLabels, innerW };
+    return { ticks, tickText, x, y, path, xLabels, innerW };
   }, [points, WIDTH, HEIGHT, MARGIN, narrow]);
 
-  const { ticks, x, y, path, xLabels, innerW } = geometry;
+  const { ticks, tickText, x, y, path, xLabels, innerW } = geometry;
   const last = points.length - 1;
   const shown = active ?? last;
 
@@ -95,7 +96,7 @@ export default function SeriesChart({ series, label }: Props) {
     setActive(Math.min(last, Math.max(0, next)));
   };
 
-  const readout = `${points[shown].period}: ${full(points[shown].value)}${unit ? ` ${unit}` : ""}`;
+  const readout = `${periodLabel(points[shown].period)}: ${full(points[shown].value)}${unit ? ` ${unit}` : ""}`;
   // Keep the tooltip inside the plot: flip it to the left of the crosshair near the right edge.
   const tipLeft = x(shown) > WIDTH * 0.6;
 
@@ -116,15 +117,15 @@ export default function SeriesChart({ series, label }: Props) {
           onKeyDown={onKeyDown}
         >
           <title id={titleId}>
-            {`${label}, ${points[0].period} to ${points[last].period}. Latest value ${full(points[last].value)}${unit ? ` ${unit}` : ""}. Use the arrow keys to read each period.`}
+            {`${label}, ${periodLabel(points[0].period)} to ${periodLabel(points[last].period)}. Latest value ${full(points[last].value)}${unit ? ` ${unit}` : ""}. Use the arrow keys to read each period.`}
           </title>
 
           {/* Gridlines and y ticks */}
-          {ticks.map((t) => (
+          {ticks.map((t, tickIndex) => (
             <g key={t}>
               <line x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(t)} y2={y(t)} stroke={GRID} strokeWidth={1} />
               <text x={MARGIN.left - 8} y={y(t)} textAnchor="end" dominantBaseline="middle" fontSize={12} fill={AXIS_TEXT} style={{ fontVariantNumeric: "tabular-nums" }}>
-                {compact(t)}
+                {tickText[tickIndex]}
               </text>
             </g>
           ))}
@@ -168,7 +169,7 @@ export default function SeriesChart({ series, label }: Props) {
               {full(points[active].value)}
               {unit && <span className="ml-1 text-sm font-normal text-slate-500">{unit}</span>}
             </p>
-            <p className="text-sm text-slate-500 tabular-nums">{points[active].period}</p>
+            <p className="text-sm text-slate-500 tabular-nums">{periodLabel(points[active].period)}</p>
           </div>
         )}
       </div>
