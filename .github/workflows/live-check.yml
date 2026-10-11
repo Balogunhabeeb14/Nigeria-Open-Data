@@ -1,0 +1,93 @@
+# Checks the platform against the real world, which unit tests cannot do:
+#
+#   sources  every configured source is asked for real data and the answers
+#            are reported (wrong codes, moved files, portals that refuse us)
+#   stack    the two-container app is built and started, loads real data,
+#            and its pages, data API and CSV download are fetched
+#
+# Runs weekly, on demand (Actions → Live check → Run workflow), and when the
+# pieces it covers change.
+name: Live check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 6 * * 1'   # Mondays 06:30 UTC
+  push:
+    paths:
+      - 'scripts/verify_live.py'
+      - 'docker-compose.lite.yml'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'pipeline/supervisord.local.conf'
+      - 'pipeline/bootstrap.py'
+      - 'pipeline/db/seed_sources.py'
+      - 'pipeline/harvest/portals.py'
+      - '.github/workflows/live-check.yml'
+
+jobs:
+  sources:
+    name: Sources answer with real data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'pipeline/requirements.txt'
+      - run: pip install -r pipeline/requirements.txt "setuptools<81"
+      - name: Ask every source
+        run: |
+          set -o pipefail
+          python scripts/verify_live.py --markdown | tee -a "$GITHUB_STEP_SUMMARY"
+
+  stack:
+    name: App starts and serves real data
+    runs-on: ubuntu-latest
+    env:
+      BOOTSTRAP_FULL: 'false'      # featured indicators + harvest; not the 1,500-series run
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml up --build -d
+      - name: Wait for real datasets to appear
+        run: |
+          for i in $(seq 1 60); do
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo 0)
+            echo "t+$((i*10))s: $count datasets"
+            if [ "$count" -ge 15 ]; then break; fi
+            sleep 10
+          done
+          [ "$count" -ge 15 ] || { echo "Fewer than 15 datasets after 10 minutes"; exit 1; }
+      - name: Let the harvest step run
+        run: sleep 150
+      - name: What users would get
+        run: |
+          set -e
+          api="http://localhost:3000/api/3/action"
+          {
+            echo "### Running app, real data"
+            echo
+            echo '```'
+            echo "Datasets: $(curl -sf "$api/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])")"
+            echo "Publishers:"; curl -sf "$api/organization_list?all_fields=true" | python3 -c "import json,sys; [print('  ', o['title'], o['package_count']) for o in json.load(sys.stdin)['result']]"
+            echo "Topics:"; curl -sf "$api/group_list?all_fields=true" | python3 -c "import json,sys; [print('  ', o['title'], o['package_count']) for o in json.load(sys.stdin)['result']]"
+            echo "Population CSV (first rows):"; rid=$(curl -sf "$api/package_show?id=ng-wb-sp-pop-totl" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['resources'][0]['id'])")
+            curl -sf "http://localhost:3000/datastore/dump/$rid" | head -4 | cut -c1-90
+            echo "Latest rows via the data API:"; curl -sf "$api/datastore_search?resource_id=$rid&limit=500" | python3 -c "import json,sys; r=json.load(sys.stdin)['result']['records']; [print('  ', x['period'], x['value']) for x in r[-3:]]"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          for path in / /datasets /topics /publishers /datasets/ng-wb-sp-pop-totl "/datasets?q=population"; do
+            code=$(curl -s -o /tmp/page.html -w '%{http_code}' "http://localhost:3000$path")
+            echo "$code $path ($(wc -c </tmp/page.html) bytes)"
+            [ "$code" = "200" ]
+          done
+          grep -q "Population, total" /tmp/page.html
+          curl -s "http://localhost:3000/datasets/ng-wb-sp-pop-totl" | grep -q "All values"
+          echo "Port 8000 must not be reachable from outside the container:"
+          if curl -s -m 5 -o /dev/null http://localhost:8000/health; then echo "EXPOSED"; exit 1; else echo "not exposed (good)"; fi
+      - name: Loader and server logs
+        if: always()
+        run: docker compose -f docker-compose.lite.yml logs --no-color app | grep -v "✅\|── \[\|Fetching\|Fetched\|Staged\|Upserted\|Transformed\|Quality Report\|PASS |" | tail -150
