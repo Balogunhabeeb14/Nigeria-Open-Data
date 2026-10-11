@@ -57,9 +57,11 @@ services:
       # only). Leave empty to keep them switched off.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
     ports:
-      # Set APP_BIND=127.0.0.1 when a reverse proxy fronts the site
+      # Published on every interface, IPv4 and IPv6. (GitHub Codespaces
+      # forwards ports over IPv6; an IPv4-only binding gives a 502 there.)
+      # Set APP_PUBLISH=127.0.0.1:3000 when a reverse proxy fronts the site
       # (docker-compose.prod.yml), so the site is only reachable through it.
-      - "${APP_BIND:-0.0.0.0}:3000:3000"
+      - "${APP_PUBLISH:-3000}:3000"
     volumes:
       - lite_landing:/app/data/raw
     depends_on:

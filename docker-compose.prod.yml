@@ -1,6 +1,6 @@
 # Adds a public HTTPS front door to docker-compose.lite.yml. Use both files:
 #
-#     SITE_ADDRESS=data.example.org APP_BIND=127.0.0.1 \
+#     SITE_ADDRESS=data.example.org APP_PUBLISH=127.0.0.1:3000 \
 #       docker compose -f docker-compose.lite.yml -f docker-compose.prod.yml up --build -d
 #
 # See docs/DEPLOY.md.

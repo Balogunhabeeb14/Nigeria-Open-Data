@@ -19,7 +19,7 @@ cd Nigeria-Open-Data
 
 cat > .env <<'ENV'
 SITE_ADDRESS=data.example.org        # your domain
-APP_BIND=127.0.0.1                   # the site is reached only through HTTPS
+APP_PUBLISH=127.0.0.1:3000                   # the site is reached only through HTTPS
 PIPELINE_DB_PASSWORD=<a long random password>
 CONTACT_EMAIL=<an address you read>
 ENV
