@@ -18,6 +18,7 @@ on:
       - 'scripts/verify_live.py'
       - 'docker-compose.lite.yml'
       - 'docker-compose.prod.yml'
+      - 'docker-compose.codespaces.yml'
       - 'deploy/**'
       - 'Dockerfile'
       - 'entrypoint.sh'
@@ -137,6 +138,36 @@ jobs:
           # Problems and the loader's own summary lines, as an annotation.
           grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | grep -v griffe | cut -c1-330 | tail -40 > loader.txt || true
           [ -s loader.txt ] && echo "::notice title=Loader log::$(sed 's/%/%25/g' loader.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
+
+  hostnet:
+    # The variant for GitHub Codespaces, where the two containers share the
+    # machine's network instead of Docker's own.
+    name: App starts on the machine's network (Codespaces set-up)
+    runs-on: ubuntu-latest
+    env:
+      BOOTSTRAP_FULL: 'false'
+      BOOTSTRAP_HARVEST: 'false'
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml up --build -d
+      - name: Wait for real datasets to appear
+        run: |
+          for i in $(seq 1 60); do
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo 0)
+            echo "t+$((i*10))s: $count datasets"
+            if [ "$count" -ge 5 ]; then break; fi
+            sleep 10
+          done
+          home=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/)
+          echo "::notice title=Codespaces set-up::datasets=$count home page=$home"
+          [ "$count" -ge 5 ] && [ "$home" = "200" ]
+      - name: Report the start-up log
+        if: always()
+        run: |
+          docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml logs --no-color app 2>&1 | head -25 | cut -c1-200 > start.txt || true
+          [ -s start.txt ] && echo "::notice title=Codespaces start-up log::$(sed 's/%/%25/g' start.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
 
   full:
     # The long one: every World Bank indicator, to find series that break the

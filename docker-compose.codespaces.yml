@@ -1,0 +1,20 @@
+# Use together with docker-compose.lite.yml in GitHub Codespaces, or on any
+# machine where containers cannot reach each other over Docker's own network
+# (the app log repeats: connection to server at "db" ... timeout expired):
+#
+#     docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml up --build -d
+#
+# Both containers then use the machine's network directly, so the app reaches
+# the database on 127.0.0.1 and the website is on port 3000 of the machine.
+# Postgres (5432) and the pipeline API (8000) are also open on the machine,
+# so use this for trying the app out, not for a public server.
+
+services:
+  db:
+    network_mode: host
+
+  app:
+    network_mode: host
+    ports: !reset []
+    environment:
+      PIPELINE_DB_URL: postgresql://pipeline:${PIPELINE_DB_PASSWORD:-pipeline}@127.0.0.1:5432/pipeline

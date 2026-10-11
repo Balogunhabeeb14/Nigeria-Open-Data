@@ -169,7 +169,13 @@ docker compose -f docker-compose.lite.yml up --build
 # then open http://localhost:3000
 ```
 
-This starts two containers: Postgres, and one app container with the website, the API and a loader. No CKAN, Solr, Redis or Prefect server is needed. The same command works in a GitHub Codespace (open port 3000 when it is offered).
+This starts two containers: Postgres, and one app container with the website, the API and a loader. No CKAN, Solr, Redis or Prefect server is needed.
+
+In a GitHub Codespace, containers often cannot reach each other over Docker's own network (the app log repeats `connection to server at "db" ... timeout expired`). Add the Codespaces file, which puts both containers on the machine's network, then open port 3000 when it is offered:
+
+```bash
+docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml up --build -d
+```
 
 On first start the loader fills the catalogue in this order, and the site shows datasets as they arrive:
 
