@@ -27,6 +27,7 @@ export default function DatasetFilters({ organizations, groups }: DatasetFilters
       params.set(key, value);
     }
 
+    params.delete("page"); // a new filter starts again from the first page
     router.push(`/datasets?${params.toString()}`);
   };
 

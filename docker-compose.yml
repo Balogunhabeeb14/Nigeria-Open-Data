@@ -124,6 +124,10 @@ services:
       - CKAN_API_KEY=${CKAN_API_KEY}
       - CKAN_ORG_ID=${CKAN_ORG_ID:-nigeriaopendata}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - CONTACT_EMAIL=${CONTACT_EMAIL:-}
+      # The website reads the catalogue from CKAN over the compose network.
+      - CATALOG_INTERNAL_URL=http://ckan:5000
       - LANDING_ROOT=/app/data/raw
       # Next.js UI environment variables
       - NEXT_PUBLIC_CKAN_URL=${NEXT_PUBLIC_CKAN_URL:-http://localhost:5000}

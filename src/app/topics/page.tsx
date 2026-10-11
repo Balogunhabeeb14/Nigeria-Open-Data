@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   description: "Browse datasets categorized by popular topics including Business, Environment, health, demographics, and crime.",
 };
 
+// Rendered per request: the catalogue is not reachable while the site is
+// being built, and a page built then would show an empty catalogue.
+export const dynamic = "force-dynamic";
+
 export default async function TopicsPage() {
   const allTopics = await fetchGroups();
 

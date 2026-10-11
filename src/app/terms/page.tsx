@@ -3,7 +3,7 @@ import { Scale, FileText, AlertTriangle, CheckCircle } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "Read the rules, attribution guidelines, and terms governing dataset usage on the Nigeria Open Data Platform.",
+  description: "Read the rules, attribution guidelines, and terms governing dataset usage on the Naija Open Data Platform.",
 };
 
 export default function TermsPage() {
@@ -15,7 +15,7 @@ export default function TermsPage() {
         </div>
         <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">Terms of Service</h1>
         <p className="text-lg text-slate-600 leading-relaxed">
-          Last updated: June 13, 2026. These Terms govern your access and use of the Nigeria Open Data Platform.
+          Last updated: June 13, 2026. These Terms govern your access and use of the Naija Open Data Platform.
         </p>
       </div>
 

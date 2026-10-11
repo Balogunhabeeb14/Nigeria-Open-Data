@@ -127,11 +127,13 @@ def trigger_source_ingestion(file_info: dict) -> dict:
         ingest_flow(source_id)
         result["status"] = "success"
 
-        # Mark file as processed in watcher manifest
+        # One ingestion run reads every file in the source's folder, so all
+        # of the source's changed files are now processed, not only this one.
         engine = get_engine()
         with engine.begin() as conn:
             _ensure_watcher_table(conn)
-            _mark_processed(conn, file_info["file_path"], file_info["file_hash"], source_id)
+            for item in file_info.get("files") or [file_info]:
+                _mark_processed(conn, item["file_path"], item["file_hash"], source_id)
 
         log.info("✅ Ingestion complete for %s/%s", source_id, filename)
 
@@ -165,12 +167,11 @@ def file_watcher_flow() -> dict:
 
     # Deduplicate by source_id — don't trigger the same source twice
     # if multiple files in the same landing folder changed simultaneously
-    seen_sources: set[str] = set()
-    unique_changes = []
+    by_source: dict[str, dict] = {}
     for change in changes:
-        if change["source_id"] not in seen_sources:
-            unique_changes.append(change)
-            seen_sources.add(change["source_id"])
+        entry = by_source.setdefault(change["source_id"], {**change, "files": []})
+        entry["files"].append(change)
+    unique_changes = list(by_source.values())
 
     results = [trigger_source_ingestion(ch) for ch in unique_changes]
 

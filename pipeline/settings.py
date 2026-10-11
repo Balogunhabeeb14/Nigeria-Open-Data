@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     ckan_api_key: SecretStr | None = None
     ckan_org_id: str = "nigeriaopendata"
 
+    # ── Catalogue backend ─────────────────────────────────────────────────────
+    # 'ckan'  : publish to a CKAN server (needs CKAN_API_KEY).
+    # 'local' : publish to the built-in catalogue in the pipeline database and
+    #           serve it from this app. No CKAN, Solr or Redis needed.
+    catalog_backend: str = "ckan"
+
+    # ── Admin access to the pipeline API ──────────────────────────────────────
+    # Sent as the X-Admin-Token header to register publishers and sources,
+    # upload files and trigger ingestion. While it is unset those endpoints
+    # are switched off entirely; reading data never needs it.
+    admin_api_token: SecretStr | None = None
+
     # ── Prefect orchestration ─────────────────────────────────────────────────
     prefect_api_url: str = "http://prefect-server:4200/api"
 
@@ -65,6 +77,14 @@ class Settings(BaseSettings):
             raise ValueError(f"log_level must be one of {valid}, got '{v}'")
         return upper
 
+    @field_validator("catalog_backend")
+    @classmethod
+    def validate_catalog_backend(cls, v: str) -> str:
+        value = v.strip().lower()
+        if value not in {"ckan", "local"}:
+            raise ValueError(f"catalog_backend must be 'ckan' or 'local', got '{v}'")
+        return value
+
     @field_validator("landing_root", mode="before")
     @classmethod
     def resolve_landing_root(cls, v) -> Path:
@@ -85,6 +105,11 @@ class Settings(BaseSettings):
     def ckan_key(self) -> str | None:
         """Return the plain CKAN API key string, or None."""
         return self.ckan_api_key.get_secret_value() if self.ckan_api_key else None
+
+    def admin_token(self) -> str | None:
+        """Return the admin token, or None when admin endpoints are off."""
+        value = self.admin_api_token.get_secret_value() if self.admin_api_token else ""
+        return value or None
 
     def s3_access_key(self) -> str | None:
         """Return the plain S3 Access Key ID, or None."""

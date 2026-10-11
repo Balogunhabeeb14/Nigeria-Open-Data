@@ -6,7 +6,7 @@
   --color-primary-500: #22c55e;
   --color-primary-600: #16a34a;
   --color-primary-700: #15803d;
-  --font-sans: var(--font-inter);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 :root {

@@ -9,13 +9,22 @@ from __future__ import annotations
 import json
 from sqlalchemy import text
 
+def _as_dict(value) -> dict:
+    """JSONB comes back as a dict from psycopg2, as a string from some drivers."""
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    return json.loads(value)
+
+
 def get_source_config(source_id: str) -> dict:
     try:
         from pipeline.db.warehouse import get_engine
         engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute(
-                text("SELECT connector, transform, domain, schedule, landing_dir, ingest_mode, indicators FROM cdm.data_sources WHERE source_id = :source_id AND is_active = true"),
+                text("SELECT connector, transform, domain, schedule, landing_dir, ingest_mode, indicators, options FROM cdm.data_sources WHERE source_id = :source_id AND is_active = true"),
                 {"source_id": source_id}
             ).fetchone()
             
@@ -29,7 +38,8 @@ def get_source_config(source_id: str) -> dict:
                     "schedule": result[3],
                     "landing_dir": result[4],
                     "ingest_mode": result[5],
-                    "indicators": indicators
+                    "indicators": indicators,
+                    "options": _as_dict(result[7]),
                 }
     except Exception as db_err:
         import logging
@@ -39,7 +49,7 @@ def get_source_config(source_id: str) -> dict:
         from pipeline.db.seed_sources import DEFAULT_SOURCES
         for src in DEFAULT_SOURCES:
             if src["source_id"].lower() == source_id.lower():
-                return src
+                return {"options": {}, **src}
     except ImportError:
         pass
 

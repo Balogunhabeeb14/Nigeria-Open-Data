@@ -1,0 +1,31 @@
+# Adds a public HTTPS front door to docker-compose.lite.yml. Use both files:
+#
+#     SITE_ADDRESS=data.example.org APP_PUBLISH=127.0.0.1:3000 \
+#       docker compose -f docker-compose.lite.yml -f docker-compose.prod.yml up --build -d
+#
+# See docs/DEPLOY.md.
+
+volumes:
+  caddy_data:      # certificates; keep this volume
+  caddy_config:
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      # Your domain (HTTPS is set up automatically), or ":80" for plain HTTP
+      # while testing.
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS to your domain, e.g. data.example.org}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  db:
+    restart: unless-stopped

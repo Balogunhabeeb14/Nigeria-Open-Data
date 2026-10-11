@@ -24,6 +24,7 @@ export default function DatasetSearch({ initialQuery = "" }: DatasetSearchProps)
     } else {
       params.delete("q");
     }
+    params.delete("page"); // a new search starts again from the first page
     router.push(`/datasets?${params.toString()}`);
   }, [router, searchParams]);
 

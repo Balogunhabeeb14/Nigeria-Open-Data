@@ -17,7 +17,7 @@ RUN npm run build
 # Stage 2: Final Runtime Environment
 FROM python:3.11-slim
 LABEL maintainer="Naija Open Data <support@nigeriaopendata.gov.ng>"
-LABEL description="Nigeria Open Data — Unified App Portal"
+LABEL description="Naija Open Data — Unified App Portal"
 
 # Install System Dependencies (Postgres client, etc)
 RUN apt-get update && apt-get install -y --no-install-recommends \

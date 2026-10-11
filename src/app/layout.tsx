@@ -1,36 +1,33 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+// Inter is bundled with the site (all its language subsets, so Yoruba, Igbo
+// and Hausa letters use it too). Nothing is fetched from Google, at build
+// time or in the visitor's browser.
+import "@fontsource-variable/inter";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: {
-    template: "%s | Nigeria Open Data Platform",
-    default: "Nigeria Open Data Platform - Trusted Public & Global Datasets",
+    template: "%s | Naija Open Data Platform",
+    default: "Naija Open Data Platform - Public data about Nigeria in one place",
   },
-  description: "Access, explore, and download verified public and government datasets from Nigeria, the UK, the US, and global repositories in accessible formats like CSV and JSON.",
-  keywords: ["Nigeria Open Data", "Global Datasets", "UK Open Data", "US Open Data", "CSV Datasets", "Government Data", "Demographic Data", "Public Data API"],
-  authors: [{ name: "Nigeria Open Data Team" }],
-  creator: "Nigeria Open Data Platform",
-  publisher: "Nigeria Open Data Platform",
+  description: "Search, chart and download public data about Nigeria from many sources, each with its publisher, licence and last update.",
+  keywords: ["Naija Open Data", "Nigeria open data", "Nigeria statistics", "Nigeria datasets", "CSV", "public data", "data API"],
+  authors: [{ name: "Naija Open Data Team" }],
+  creator: "Naija Open Data Platform",
+  publisher: "Naija Open Data Platform",
   openGraph: {
     type: "website",
     locale: "en_NG",
-    url: "http://localhost:3000",
-    siteName: "Nigeria Open Data Platform",
-    title: "Nigeria Open Data Platform - Public & Global Datasets",
-    description: "Discover and download verified public data from Nigeria, the United States, the United Kingdom, and global institutions in accessible formats.",
+    siteName: "Naija Open Data Platform",
+    title: "Naija Open Data Platform",
+    description: "Search, chart and download public data about Nigeria, with the source of every number shown.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nigeria Open Data Platform",
-    description: "Discover and download verified public data from Nigeria, the United States, the United Kingdom, and global institutions in accessible formats.",
+    title: "Naija Open Data Platform",
+    description: "Search, chart and download public data about Nigeria, with the source of every number shown.",
   },
 };
 
@@ -40,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} antialiased`}>
+    <html lang="en" className="antialiased">
       <body className="min-h-screen bg-slate-50 flex flex-col">
         <Header />
         <main className="flex-grow">
