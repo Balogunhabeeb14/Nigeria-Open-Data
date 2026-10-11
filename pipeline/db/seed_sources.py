@@ -176,7 +176,7 @@ def seed_default_sources() -> int:
         ) VALUES (
             :source_id, :connector, :transform, :domain, :schedule,
             :landing_dir, :ingest_mode, CAST(:indicators AS JSONB),
-            CAST(:options AS JSONB), true
+            CAST(:options AS JSONB), :enabled
         )
         ON CONFLICT (source_id) DO UPDATE SET
             connector   = EXCLUDED.connector,
@@ -203,6 +203,9 @@ def seed_default_sources() -> int:
                 "ingest_mode": source["ingest_mode"],
                 "indicators":  json.dumps(source["indicators"]),
                 "options":     json.dumps(source.get("options", {})),
+                # Only decides whether a source starts switched on in a new
+                # database; an existing row's is_active is never changed.
+                "enabled":     bool(source.get("enabled", True)),
             })
             seeded_count += 1
             logger.info("Seeded source configuration: %s", source["source_id"])

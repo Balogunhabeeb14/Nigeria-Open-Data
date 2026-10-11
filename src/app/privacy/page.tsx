@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { contactEmail, REPO_URL } from "@/lib/site";
 import { Shield, Lock, Eye, CheckCircle } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -6,7 +7,10 @@ export const metadata: Metadata = {
   description: "Learn how we collect, process, and protect user data on the Nigeria Open Data Platform.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function PrivacyPage() {
+  const email = contactEmail();
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
       <div className="mb-12 text-center md:text-left">
@@ -55,7 +59,11 @@ export default function PrivacyPage() {
         <section className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
           <h3 className="font-bold text-slate-900 mb-2">Questions & Inquiries</h3>
           <p className="text-sm">
-            For questions regarding metadata licensing, privacy concerns, or data governance, please reach out to our administration desk at <a href="mailto:support@Nigeriaopendata.gov.ng" className="text-primary-600 hover:underline">support@Nigeriaopendata.gov.ng</a>.
+            For questions regarding metadata licensing, privacy concerns, or data governance, {email ? (
+              <>write to us at <a href={`mailto:${email}`} className="text-primary-600 hover:underline">{email}</a>.</>
+            ) : (
+              <>raise it on <a href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">the project&rsquo;s issue tracker</a>.</>
+            )}
           </p>
         </section>
 

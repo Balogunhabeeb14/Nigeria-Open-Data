@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     #           serve it from this app. No CKAN, Solr or Redis needed.
     catalog_backend: str = "ckan"
 
+    # ── Admin access to the pipeline API ──────────────────────────────────────
+    # Sent as the X-Admin-Token header to register publishers and sources,
+    # upload files and trigger ingestion. While it is unset those endpoints
+    # are switched off entirely; reading data never needs it.
+    admin_api_token: SecretStr | None = None
+
     # ── Prefect orchestration ─────────────────────────────────────────────────
     prefect_api_url: str = "http://prefect-server:4200/api"
 
@@ -99,6 +105,11 @@ class Settings(BaseSettings):
     def ckan_key(self) -> str | None:
         """Return the plain CKAN API key string, or None."""
         return self.ckan_api_key.get_secret_value() if self.ckan_api_key else None
+
+    def admin_token(self) -> str | None:
+        """Return the admin token, or None when admin endpoints are off."""
+        value = self.admin_api_token.get_secret_value() if self.admin_api_token else ""
+        return value or None
 
     def s3_access_key(self) -> str | None:
         """Return the plain S3 Access Key ID, or None."""

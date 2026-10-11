@@ -1,14 +1,16 @@
 import SearchBar from "@/components/SearchBar";
 import TopicCard from "@/components/TopicCard";
 
+import Link from "next/link";
 import { fetchGroups } from "@/lib/ckan";
+import { fetchDataStatus, longDate } from "@/lib/site";
 
 // Rendered per request: the catalogue is not reachable while the site is
 // being built, and a page built then would show an empty catalogue.
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const groups = await fetchGroups();
+  const [groups, status] = await Promise.all([fetchGroups(), fetchDataStatus()]);
   
   // Map or fallback in case CKAN isn't populated yet
   const displayGroups = groups.length > 0 ? groups : [
@@ -52,9 +54,18 @@ export default async function Home() {
             Nigeria <span className="text-primary-600">Open Data</span>
           </h1>
           <p className="text-xl text-slate-600 mb-12 max-w-2xl mx-auto leading-relaxed">
-            Access trusted, scalable, and verifiable government and public data to build the next generation of products and services.
+            Public data about Nigeria from many sources, in one place. Search it, chart it, download it, and see where every number came from.
           </p>
           <SearchBar />
+          {status && status.totals.datasets > 0 && (
+            <p className="mt-8 text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{status.totals.datasets.toLocaleString("en-GB")}</span> datasets from{" "}
+              <span className="font-semibold text-slate-900">{status.totals.sources}</span> {status.totals.sources === 1 ? "source" : "sources"}
+              {" · "}last updated {longDate(status.totals.last_successful_update)}
+              {" · "}
+              <Link href="/status" className="text-primary-700 hover:underline">data status</Link>
+            </p>
+          )}
         </div>
       </section>
 
@@ -93,7 +104,7 @@ export default async function Home() {
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 mb-4">Why Use Nigeria Open Data?</h2>
             <p className="text-slate-600 max-w-2xl mx-auto">
-              Built on enterprise-grade infrastructure to deliver the best data experience.
+              An independent, open-source project. It is not a government service.
             </p>
           </div>
           
@@ -104,9 +115,9 @@ export default async function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold mb-3 text-slate-900">Trusted & Secure</h3>
+              <h3 className="text-xl font-bold mb-3 text-slate-900">Sourced and dated</h3>
               <p className="text-slate-600 leading-relaxed">
-                Access verified, up-to-date data directly from government and public bodies in a secure environment.
+                Every dataset names its publisher, its licence and when it was last updated, with a link back to the original.
               </p>
             </div>
             
@@ -116,9 +127,9 @@ export default async function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold mb-3 text-slate-900">Lightning Fast</h3>
+              <h3 className="text-xl font-bold mb-3 text-slate-900">Ready to use</h3>
               <p className="text-slate-600 leading-relaxed">
-                Powered by a modern architecture to ensure datasets are searchable and downloadable in milliseconds.
+                Chart any series on the page, read every value in a table, or download the lot as CSV. No sign-up.
               </p>
             </div>
             
@@ -128,9 +139,9 @@ export default async function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold mb-3 text-slate-900">Extensive Coverage</h3>
+              <h3 className="text-xl font-bold mb-3 text-slate-900">Kept current</h3>
               <p className="text-slate-600 leading-relaxed">
-                Explore an ever-growing catalog of datasets across multiple domains, updated via automated pipelines.
+                Sources are checked again every week and revised figures replace old ones. The data status page shows what was loaded and when.
               </p>
             </div>
           </div>

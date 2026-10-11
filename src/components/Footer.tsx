@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { Database, Mail } from "lucide-react";
+import { contactEmail, REPO_URL } from "@/lib/site";
 
 export default function Footer() {
+  const email = contactEmail();
   return (
     <footer className="bg-slate-900 text-slate-300 py-12">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -17,9 +19,15 @@ export default function Footer() {
               Empowering citizens, researchers, and developers with accessible public data for innovation and transparency.
             </p>
             <div className="flex space-x-4">
-              <a href="mailto:support@Nigeriaopendata.gov.ng" className="text-slate-400 hover:text-white transition-colors">
-                <Mail className="h-5 w-5" />
-              </a>
+              {email ? (
+                <a href={`mailto:${email}`} className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors">
+                  <Mail className="h-5 w-5" /> {email}
+                </a>
+              ) : (
+                <a href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-white transition-colors underline">
+                  Report a problem or ask a question
+                </a>
+              )}
             </div>
           </div>
           
@@ -30,6 +38,7 @@ export default function Footer() {
               <li><Link href="/topics" className="hover:text-primary-400 transition-colors">Topics</Link></li>
               <li><Link href="/publishers" className="hover:text-primary-400 transition-colors">Publishers</Link></li>
               <li><Link href="/api" className="hover:text-primary-400 transition-colors">API Documentation</Link></li>
+              <li><Link href="/status" className="hover:text-primary-400 transition-colors">Data status</Link></li>
             </ul>
           </div>
           
@@ -45,7 +54,7 @@ export default function Footer() {
         </div>
         <div className="border-t border-slate-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm text-slate-500">
-            &copy; {new Date().getFullYear()} Nigeria Open Data. All rights reserved.
+            &copy; {new Date().getFullYear()} Nigeria Open Data. An independent project; not a government service. Data belongs to its publishers.
           </p>
           <p className="text-sm text-slate-500 mt-2 md:mt-0">
             Built for transparency.

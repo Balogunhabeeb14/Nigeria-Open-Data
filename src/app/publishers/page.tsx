@@ -1,13 +1,13 @@
 import { Building2, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { fetchOrganizations } from "@/lib/ckan";
-import UploadDatasetButton from "@/components/UploadDatasetButton";
+import { REPO_URL } from "@/lib/site";
 
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Data Publishers",
-  description: "Browse datasets provided by various government departments, ministries, agencies, and public institutions.",
+  description: "The organisations whose data is listed on Naija Open Data.",
 };
 
 // Rendered per request: the catalogue is not reachable while the site is
@@ -22,9 +22,16 @@ export default async function PublishersPage() {
       <div className="max-w-3xl mx-auto text-center mb-16">
         <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 tracking-tight">Data Publishers</h1>
         <p className="text-lg text-slate-600 mb-8">
-          Explore open datasets published by verified government ministries, departments, and agencies (MDAs).
+          The organisations whose data is listed here. Every dataset links back to its original source.
         </p>
-        <UploadDatasetButton />
+        <a
+          href={`${REPO_URL}/issues/new`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+        >
+          Suggest a dataset or source
+        </a>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -51,7 +58,7 @@ export default async function PublishersPage() {
             </div>
             <h3 className="text-2xl font-black text-slate-900 mb-2">No Publishers Found</h3>
             <p className="text-slate-500 max-w-md mx-auto text-lg font-medium">
-              There are currently no registered publishers or organizations. Verified government bodies and contributors will appear here once registered.
+              No publishers are listed yet. They appear here as soon as the first datasets are loaded.
             </p>
           </div>
         )}

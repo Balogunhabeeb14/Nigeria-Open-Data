@@ -74,20 +74,24 @@ def test_fastapi_scraping_endpoints():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Override settings for tests
         settings.landing_root = Path(tmpdir)
+        # Triggering ingestion over the API is an admin action.
+        from pydantic import SecretStr
+        settings.admin_api_token = SecretStr("test-admin-token")
+        admin = {"X-Admin-Token": "test-admin-token"}
         setup_mock_data(settings.landing_root)
         
         # Override PREFECT_API_URL to run flows locally without hitting the server
         os.environ["PREFECT_API_URL"] = ""
         
         # 1. Test Single Source Scrape
-        response = client.post("/scrape/source/CBN")
+        response = client.post("/scrape/source/CBN", headers=admin)
         assert response.status_code == 200
         data = response.json()
         assert data["source_id"] == "CBN"
         assert data["status"] in ["success", "partial_success"]
         
         # 2. Test Batch Scrape
-        batch_response = client.post("/scrape/batch")
+        batch_response = client.post("/scrape/batch", headers=admin)
         assert batch_response.status_code == 200
         batch_data = batch_response.json()
         assert batch_data["status"] == "completed"

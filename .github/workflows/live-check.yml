@@ -40,7 +40,15 @@ jobs:
       - name: Ask every source
         run: |
           set -o pipefail
-          python scripts/verify_live.py --markdown | tee -a "$GITHUB_STEP_SUMMARY"
+          python scripts/verify_live.py | tee report.txt
+          python scripts/verify_live.py --markdown >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Put the report on the run page
+        if: always()
+        # As an annotation, the report is readable from the run's summary
+        # page and through the API without opening the log.
+        run: |
+          [ -f report.txt ] || exit 0
+          echo "::notice title=Source check::$(sed 's/%/%25/g' report.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
 
   stack:
     name: App starts and serves real data
@@ -78,7 +86,8 @@ jobs:
             curl -sf "http://localhost:3000/datastore/dump/$rid" | head -4 | cut -c1-90
             echo "Latest rows via the data API:"; curl -sf "$api/datastore_search?resource_id=$rid&limit=500" | python3 -c "import json,sys; r=json.load(sys.stdin)['result']['records']; [print('  ', x['period'], x['value']) for x in r[-3:]]"
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY" | tee stack.txt
+          echo "::notice title=Running app::$(sed 's/%/%25/g' stack.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
           for path in / /datasets /topics /publishers /datasets/ng-wb-sp-pop-totl "/datasets?q=population"; do
             code=$(curl -s -o /tmp/page.html -w '%{http_code}' "http://localhost:3000$path")
             echo "$code $path ($(wc -c </tmp/page.html) bytes)"
@@ -90,4 +99,9 @@ jobs:
           if curl -s -m 5 -o /dev/null http://localhost:8000/health; then echo "EXPOSED"; exit 1; else echo "not exposed (good)"; fi
       - name: Loader and server logs
         if: always()
-        run: docker compose -f docker-compose.lite.yml logs --no-color app | grep -v "✅\|── \[\|Fetching\|Fetched\|Staged\|Upserted\|Transformed\|Quality Report\|PASS |" | tail -150
+        run: |
+          docker compose -f docker-compose.lite.yml logs --no-color app > app.log 2>&1 || true
+          grep -v "✅\|── \[\|Fetching\|Fetched\|Staged\|Upserted\|Transformed\|Quality Report\|PASS |" app.log | tail -150
+          # Problems and the loader's own summary lines, as an annotation.
+          grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | cut -c1-300 | tail -40 > loader.txt || true
+          [ -s loader.txt ] && echo "::notice title=Loader log::$(sed 's/%/%25/g' loader.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
