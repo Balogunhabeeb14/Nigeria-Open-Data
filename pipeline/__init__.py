@@ -1,5 +1,5 @@
 """
-Nigeria Open Data – Ingestion Pipeline
+Naija Open Data – Ingestion Pipeline
 =======================================
 A production-grade, modular data pipeline that ingests open data about Nigeria,
 maps it to a Common Data Model (CDM), and publishes it to CKAN and a data warehouse.

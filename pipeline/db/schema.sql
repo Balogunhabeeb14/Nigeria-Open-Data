@@ -198,3 +198,17 @@ CREATE TABLE IF NOT EXISTS cdm.catalog_row (
     data        JSONB NOT NULL,
     PRIMARY KEY (resource_id, row_key)
 );
+
+-- Values can be very large: Nigeria's GDP in current naira is in the hundreds
+-- of trillions, more than NUMERIC(20,6) holds. Widen once; the check makes
+-- this a no-op (and takes no table lock) on every later start.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'cdm' AND table_name = 'indicator_observation'
+          AND column_name = 'value' AND numeric_precision < 30
+    ) THEN
+        ALTER TABLE cdm.indicator_observation ALTER COLUMN value TYPE NUMERIC(30, 6);
+    END IF;
+END $$;

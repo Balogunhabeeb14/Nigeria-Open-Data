@@ -25,6 +25,9 @@ import logging
 import os
 import time
 
+# Prefect's docstring parser warns about every flow parameter on import.
+logging.getLogger("griffe").setLevel(logging.ERROR)
+
 logger = logging.getLogger("bootstrap")
 
 
@@ -83,7 +86,7 @@ def run_once() -> None:
         logger.info("Step 2: listings from other portals")
         for portal in (p for p in HARVEST_PORTALS if p.get("enabled")):
             try:
-                logger.info("Harvest %s: %s", portal["id"], harvest_portal(portal).as_dict())
+                harvest_portal(portal)      # logs its own summary line
             except Exception as exc:
                 # A portal that is down or refuses us must not stop the rest.
                 logger.error("Harvest of %s failed: %s", portal["id"], exc)

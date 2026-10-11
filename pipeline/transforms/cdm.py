@@ -4,7 +4,7 @@ pipeline/transforms/cdm.py
 Common Data Model (CDM) definition.
 
 CDMRecord is the single canonical representation of one data point
-in the Nigeria Open Data platform.  Every connector's transform
+in the Naija Open Data platform.  Every connector's transform
 function must produce a list of CDMRecord objects.
 
 Why a dataclass?

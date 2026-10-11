@@ -38,7 +38,7 @@ export default async function StatusPage() {
               ["Datasets", status.totals.datasets.toLocaleString("en-GB")],
               ["Data points held", status.totals.observations.toLocaleString("en-GB")],
               ["Sources", status.totals.sources.toLocaleString("en-GB")],
-              ["Last update", longDate(status.totals.last_successful_update)],
+              ["Last checked", longDate(status.totals.last_successful_update)],
             ].map(([label, value]) => (
               <div key={label} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                 <dt className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">{label}</dt>
@@ -49,12 +49,12 @@ export default async function StatusPage() {
 
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
-              <caption className="sr-only">Sources, the datasets each provides and when each was last updated</caption>
+              <caption className="sr-only">Sources, the datasets each provides and when each was last checked</caption>
               <thead className="bg-slate-50 text-left">
                 <tr>
                   <th scope="col" className="px-6 py-4 font-semibold text-slate-700">Source</th>
                   <th scope="col" className="px-6 py-4 font-semibold text-slate-700 text-right">Datasets</th>
-                  <th scope="col" className="px-6 py-4 font-semibold text-slate-700">Last updated</th>
+                  <th scope="col" className="px-6 py-4 font-semibold text-slate-700">Last checked</th>
                   <th scope="col" className="px-6 py-4 font-semibold text-slate-700">Notes</th>
                 </tr>
               </thead>

@@ -105,3 +105,49 @@ jobs:
           # Problems and the loader's own summary lines, as an annotation.
           grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | cut -c1-300 | tail -40 > loader.txt || true
           [ -s loader.txt ] && echo "::notice title=Loader log::$(sed 's/%/%25/g' loader.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
+
+  full:
+    # The long one: every World Bank indicator, to find series that break the
+    # pipeline (odd values, timeouts) before users do. Run it on demand, or
+    # by putting [full-check] in a commit message.
+    name: Full World Bank catalogue loads
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[full-check]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BOOTSTRAP_FULL: 'true'
+      BOOTSTRAP_HARVEST: 'false'
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml up --build -d
+      - name: Wait for the full load to finish
+        run: |
+          start=$(date +%s)
+          for i in $(seq 1 110); do
+            if docker compose -f docker-compose.lite.yml logs --no-color app 2>/dev/null | grep -q "Load finished"; then break; fi
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo "?")
+            echo "t+${i}min: $count datasets"
+            sleep 60
+          done
+          echo "ELAPSED_MIN=$(( ($(date +%s) - start) / 60 ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          compose="docker compose -f docker-compose.lite.yml"
+          {
+            echo "Full World Bank load: ${ELAPSED_MIN:-?} minutes"
+            $compose logs --no-color app | grep -E "featured:|full:|Load finished|Stopping this run" | cut -c1-240
+            echo "Status:"
+            $compose exec -T app curl -s localhost:8000/api/status | python3 -c "import json,sys; d=json.load(sys.stdin); print('  totals', d['totals']); [print('  ', s['id'], {k: s[k] for k in ('datasets','checked_without_data','failed','awaiting_publication','observations')}) for s in d['sources']]"
+            echo "Datasets on the site: $(curl -sf 'http://localhost:3000/api/3/action/package_search?rows=0' | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])")"
+            echo "Largest value stored:"; $compose exec -T db psql -U pipeline -Atc "SELECT indicator_id || ' ' || period || ' ' || value FROM cdm.indicator_observation ORDER BY value DESC NULLS LAST LIMIT 2"
+            echo "Failures (first 25):"
+            $compose exec -T db psql -U pipeline -Atc "SELECT source_key || ': ' || left(coalesce(error_message, ''), 160) FROM cdm.ingest_manifest WHERE status = 'failed' ORDER BY source_key LIMIT 25"
+            echo "Failure kinds:"
+            $compose exec -T db psql -U pipeline -Atc "SELECT count(*) || ' x ' || left(coalesce(error_message, ''), 80) FROM cdm.ingest_manifest WHERE status = 'failed' GROUP BY left(coalesce(error_message, ''), 80) ORDER BY count(*) DESC LIMIT 8"
+          } 2>&1 | tee full.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Full load::$(sed 's/%/%25/g' full.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+          curl -s -o /dev/null -w "search 'gdp' page: %{http_code} in %{time_total}s\n" "http://localhost:3000/datasets?q=gdp"
+          curl -s -o /dev/null -w "datasets page 40: %{http_code} in %{time_total}s\n" "http://localhost:3000/datasets?page=40"

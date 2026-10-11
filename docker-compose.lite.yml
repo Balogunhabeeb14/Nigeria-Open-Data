@@ -50,6 +50,12 @@ services:
       BOOTSTRAP_HARVEST: ${BOOTSTRAP_HARVEST:-true}
       BOOTSTRAP_FULL: ${BOOTSTRAP_FULL:-true}
       REFRESH_HOURS: ${REFRESH_HOURS:-168}
+      # Shown as the contact address on the site. Leave empty to link to the
+      # project's issue tracker instead.
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # Enables the admin endpoints of the pipeline API (inside the container
+      # only). Leave empty to keep them switched off.
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
     ports:
       - "3000:3000"
     volumes:

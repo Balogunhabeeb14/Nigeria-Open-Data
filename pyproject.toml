@@ -1,12 +1,12 @@
 [project]
 name = "naija-open-data-pipeline"
 version = "1.0.0"
-description = "Production ingestion pipeline for the Nigeria Open Data platform"
+description = "Production ingestion pipeline for the Naija Open Data platform"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Nigeria Open Data Team", email = "support@nigeriaopendata.gov.ng" }
+    { name = "Naija Open Data Team", email = "support@nigeriaopendata.gov.ng" }
 ]
 keywords = ["nigeria", "open-data", "data-pipeline", "etl", "prefect"]
 

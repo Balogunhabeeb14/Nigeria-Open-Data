@@ -7,7 +7,7 @@ from sqlalchemy import text
 from pipeline.db.warehouse import get_engine
 
 app = FastAPI(
-    title="Nigeria Open Data - Ingestion API",
+    title="Naija Open Data - Ingestion API",
     description=(
         "Read endpoints are open. Endpoints that change the platform need the "
         "X-Admin-Token header and are off until ADMIN_API_TOKEN is set."

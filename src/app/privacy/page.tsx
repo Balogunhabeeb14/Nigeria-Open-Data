@@ -4,7 +4,7 @@ import { Shield, Lock, Eye, CheckCircle } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "Learn how we collect, process, and protect user data on the Nigeria Open Data Platform.",
+  description: "Learn how we collect, process, and protect user data on the Naija Open Data Platform.",
 };
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
         </div>
         <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">Privacy Policy</h1>
         <p className="text-lg text-slate-600 leading-relaxed">
-          Last updated: June 13, 2026. This Privacy Policy details how we handle information collected from visitors of the Nigeria Open Data Platform.
+          Last updated: June 13, 2026. This Privacy Policy details how we handle information collected from visitors of the Naija Open Data Platform.
         </p>
       </div>
 
@@ -30,7 +30,7 @@ export default function PrivacyPage() {
             <Eye className="w-5 h-5 text-primary-600" /> Information We Collect
           </h2>
           <p>
-            The Nigeria Open Data platform values transparency. As a public service portal, we do not require user registration or account creation for querying and downloading public files. The only data processed includes:
+            The Naija Open Data platform values transparency. As a public service portal, we do not require user registration or account creation for querying and downloading public files. The only data processed includes:
           </p>
           <ul className="list-disc pl-6 space-y-2">
             <li><strong>Technical Access Logs</strong>: Standard server logs containing anonymous IP addresses, browser agents, requested resource paths, and retrieval timestamps.</li>

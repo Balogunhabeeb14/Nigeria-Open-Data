@@ -51,7 +51,7 @@ export default async function Home() {
         <div className="absolute inset-0 bg-gradient-to-b from-primary-50 to-slate-50 z-0"></div>
         <div className="container mx-auto px-4 relative z-10 text-center">
           <h1 className="text-5xl md:text-6xl font-extrabold text-slate-900 mb-6 tracking-tight">
-            Nigeria <span className="text-primary-600">Open Data</span>
+            Naija <span className="text-primary-600">Open Data</span>
           </h1>
           <p className="text-xl text-slate-600 mb-12 max-w-2xl mx-auto leading-relaxed">
             Public data about Nigeria from many sources, in one place. Search it, chart it, download it, and see where every number came from.
@@ -61,7 +61,7 @@ export default async function Home() {
             <p className="mt-8 text-sm text-slate-600">
               <span className="font-semibold text-slate-900">{status.totals.datasets.toLocaleString("en-GB")}</span> datasets from{" "}
               <span className="font-semibold text-slate-900">{status.totals.sources}</span> {status.totals.sources === 1 ? "source" : "sources"}
-              {" · "}last updated {longDate(status.totals.last_successful_update)}
+              {" · "}last checked {longDate(status.totals.last_successful_update)}
               {" · "}
               <Link href="/status" className="text-primary-700 hover:underline">data status</Link>
             </p>
@@ -102,7 +102,7 @@ export default async function Home() {
 
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-slate-900 mb-4">Why Use Nigeria Open Data?</h2>
+            <h2 className="text-3xl font-bold text-slate-900 mb-4">Why Use Naija Open Data?</h2>
             <p className="text-slate-600 max-w-2xl mx-auto">
               An independent, open-source project. It is not a government service.
             </p>

@@ -1,4 +1,4 @@
-# Nigeria Open Data – Naija Open Data Platform
+# Naija Open Data
 
 Naija Open Data is an independent, open-source platform that collects public data about Nigeria from many sources and republishes it in one searchable catalogue, with every dataset's source, licence, coverage and last refresh shown.
 
@@ -18,10 +18,10 @@ It is a volunteer project. It is not a government service.
 
 | Source | Status | Notes |
 |---|---|---|
-| World Bank, World Development Indicators | Live | 22 featured indicators plus the rest of the WDI catalogue (about 1,500 series) through discovery |
-| Humanitarian Data Exchange, openAFRICA, EnergyData.info | Harvested | Nigeria datasets listed with links to the original files |
-| CBN Statistics | Connector present | The seeded file URLs need replacing with current ones |
-| Nigeria Data Portal (Open Data for Africa) | Connector present | The seeded dataset ids are placeholders the API rejects |
+| World Bank, World Development Indicators | Live | 21 featured indicators plus the rest of the WDI catalogue (1,498 series listed) through discovery |
+| Humanitarian Data Exchange, openAFRICA, EnergyData.info | Harvested | About 370 Nigeria datasets listed with links to the original files |
+| CBN Statistics | Switched off | Connector present; the seeded file links return 404 and need replacing |
+| Nigeria Data Portal (Open Data for Africa) | Switched off | Connector present; the seeded dataset ids are placeholders the API rejects |
 
 `data_sources/catalog.yaml` lists 40 sources with access method, licence, priority and what has been verified.
 
@@ -85,6 +85,7 @@ Nigeria-Open-Data/
 │   │   └── api.py                 # Its read API, in CKAN's shape
 │   ├── deploy.py                  # Registers Prefect schedules
 │   ├── settings.py                # Environment configuration (pydantic-settings)
+│   ├── security.py                # Admin token and input checks for the API
 │   │
 │   ├── connectors/
 │   │   ├── base.py                # BaseConnector: HTTP retries, hashing, expand_indicators()
@@ -116,7 +117,9 @@ Nigeria-Open-Data/
 │
 ├── datapipeline/                  # Earlier Mage AI experiment; not used by the pipeline
 ├── src/                           # Next.js frontend
-├── scripts/run_local.sh           # Run everything without Docker
+├── scripts/
+│   ├── run_local.sh               # Run everything without Docker
+│   └── verify_live.py             # Ask every real source for data and report
 ├── docker-compose.lite.yml        # 2 containers: Postgres + app (built-in catalogue)
 ├── docker-compose.yml             # Full stack with CKAN, Solr, Redis, Prefect
 ├── .env.example
@@ -167,7 +170,7 @@ This starts two containers: Postgres, and one app container with the website, th
 
 On first start the loader fills the catalogue in this order, and the site shows datasets as they arrive:
 
-1. the 22 featured World Bank indicators (a minute or two);
+1. the 21 featured World Bank indicators (under a minute);
 2. Nigeria datasets listed on HDX, openAFRICA and EnergyData.info;
 3. the rest of the World Bank catalogue (about 1,500 requests; let it run).
 
@@ -224,7 +227,7 @@ docker-compose logs -f pipeline
 ### 3. Load data by hand
 
 ```bash
-# A quick first run: the 22 featured World Bank indicators only
+# A quick first run: the featured World Bank indicators only
 docker-compose exec pipeline_db psql -U pipeline -c \
   "UPDATE cdm.data_sources SET options = options || '{\"discover\": false}' WHERE source_id = 'WorldBank'"
 docker-compose exec pipeline python -m pipeline.flows.ingest_flow WorldBank
@@ -354,12 +357,40 @@ The Prefect UI (http://localhost:4200) has per-task logs for each run.
 
 ---
 
+## Checking it against the real world
+
+Unit tests fake the sources. Two things check the real ones:
+
+```bash
+python scripts/verify_live.py     # asks every source for real data and reports what came back
+```
+
+and the **Live check** workflow (`.github/workflows/live-check.yml`), which runs that script and also builds the two-container app, starts it, waits for real datasets to load and fetches its pages, data API and CSV download. It runs every Monday, on demand, and when the pieces it covers change. A third job loads the entire World Bank catalogue; run it on demand or by putting `[full-check]` in a commit message.
+
+The site's own **Data status** page (`/status`, from `GET /api/status`) shows, per source, how many datasets were loaded and when.
+
+---
+
+## Security
+
+- **Reading is open.** The catalogue, the data API and downloads need no account.
+- **Changing things needs the admin token.** Registering a publisher or source, uploading a file, triggering ingestion and listing publisher contacts all require the `X-Admin-Token` header. Until `ADMIN_API_TOKEN` is set on the server, those endpoints are switched off and answer 503.
+- **Sources can only use code that ships with the pipeline.** A registered source names its connector and transform; anything outside `pipeline.connectors` and `pipeline.transforms` is refused.
+- **Uploads are confined.** The file name is reduced to a safe one, only CSV, Excel and PDF up to 50 MB are accepted, and the file is stored only in the folder of a source the publisher owns.
+- **In the lite set-up the pipeline API is not published at all.** Only the website's port is; it proxies the read-only routes.
+
+```bash
+curl -X POST http://localhost:8000/scrape/source/WorldBank -H "X-Admin-Token: $ADMIN_API_TOKEN"
+```
+
+---
+
 ## Known gaps
 
-- The pipeline API's write endpoints (`/api/publishers`, `/api/sources`, `/api/upload`, `/scrape/*`) have no real access control. Do not expose port 8000 publicly until they are restricted.
-- The frontend's publisher form posts to routes that are not proxied to the pipeline API.
-- CBN and Nigeria Data Portal need real file URLs and dataset ids (see the source catalogue).
-- The scheduled GitHub Action (`ingest.yml`) writes to a database that is discarded when the job ends.
+- CBN and Nigeria Data Portal start switched off: their seeded file links and dataset ids do not work (see the source catalogue). They are the route to more Nigerian-official and state-level data.
+- The website's old publisher sign-up form is no longer linked; publishing by outside organisations needs a proper sign-in before it is offered again.
+- The scheduled GitHub Action `ingest.yml` writes to a database that is discarded when the job ends, and has been failing; it predates this work.
+- No usage analytics or feedback form yet.
 - Charts cover one place over time. State and LGA tables are shown as tables; maps and multi-place charts are not built yet.
 - The full CKAN stack (`docker-compose.yml`) has not been run end to end since these changes; the lite set-up is the tested path.
 
@@ -392,4 +423,4 @@ MIT License. Hosted data is subject to the original source's terms of use.
 
 ## Contact
 
-📧 [support@nigeriaopendata.gov.ng](mailto:hab31794@gmail.com)
+Questions, problems and dataset suggestions: [open an issue](https://github.com/Balogunhabeeb14/Nigeria-Open-Data/issues).

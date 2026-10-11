@@ -267,6 +267,16 @@ def test_changed_description_is_republished_even_when_numbers_are_not(world_bank
     assert run()["WB_NY_GDP_MKTP_KD_ZG"]["status"] == "unchanged"
 
 
+def test_very_large_and_very_small_values_are_stored_exactly(world_bank, fake_ckan):
+    """GDP in current naira runs to hundreds of trillions."""
+    world_bank["series"][GDP_CODE] = {"2023": 277_490_000_000_000.0, "2024": 0.000123, "2025": -6.37}
+    assert run()["WB_NY_GDP_MKTP_KD_ZG"]["status"] == "success"
+    stored = dict(query("SELECT period, value::float FROM cdm.indicator_observation WHERE indicator_id = 'WB_NY_GDP_MKTP_KD_ZG'"))
+    assert stored == {"2023": 277_490_000_000_000.0, "2024": 0.000123, "2025": -6.37}
+    [resource] = fake_ckan.packages["ng-wb-ny-gdp-mktp-kd-zg"]["resources"]
+    assert max(r["value"] for r in fake_ckan.rows(resource["id"])) == 277_490_000_000_000.0
+
+
 def test_featured_only_skips_discovery(world_bank):
     execute("""
         UPDATE cdm.data_sources SET indicators = CAST(:ind AS jsonb) WHERE source_id = 'WorldBank'
@@ -361,11 +371,28 @@ def test_seeding_does_not_switch_a_disabled_source_back_on(database, monkeypatch
         options, indicators = query("SELECT options, indicators FROM cdm.data_sources WHERE source_id = 'WorldBank'")[0]
         assert options["discover"] is False and options["max_indicators"] == 50   # operator overrides kept
         assert options["license_id"] == "cc-by"                                   # defaults filled back in
-        assert len(indicators) == 22                                              # code-owned list restored
+        assert len(indicators) == 21                                              # code-owned list restored
     finally:
         execute("UPDATE cdm.data_sources SET is_active = true WHERE source_id = 'NigeriaDataPortal'")
         execute("UPDATE cdm.data_sources SET options = '{}'::jsonb WHERE source_id = 'WorldBank'")
         seed_default_sources()
+
+
+def test_sources_with_dead_links_start_switched_off(database, monkeypatch):
+    monkeypatch.undo()
+    from pipeline.db.seed_sources import seed_default_sources
+    execute("DELETE FROM cdm.data_sources WHERE source_id IN ('CBN', 'NigeriaDataPortal', 'WorldBank')")
+    seed_default_sources()
+    active = dict(query("SELECT source_id, is_active FROM cdm.data_sources"))
+    try:
+        assert active["WorldBank"] is True
+        assert active["CBN"] is False and active["NigeriaDataPortal"] is False
+        # An operator who has fixed the links switches it on, and it stays on.
+        execute("UPDATE cdm.data_sources SET is_active = true WHERE source_id = 'CBN'")
+        seed_default_sources()
+        assert query("SELECT is_active FROM cdm.data_sources WHERE source_id = 'CBN'")[0][0] is True
+    finally:
+        execute("UPDATE cdm.data_sources SET is_active = true WHERE source_id IN ('CBN', 'NigeriaDataPortal')")
 
 
 def test_file_watcher_marks_every_changed_file(monkeypatch):

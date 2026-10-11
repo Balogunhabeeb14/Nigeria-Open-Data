@@ -102,7 +102,7 @@ def validate_registry() -> bool:
 
 
 def main() -> None:
-    logger.info("=== Nigeria Open Data Pipeline — Deploying Flows ===")
+    logger.info("=== Naija Open Data Pipeline — Deploying Flows ===")
     logger.info("Settings: %s", settings)
 
     # Validate all connectors/transforms are importable before deploying

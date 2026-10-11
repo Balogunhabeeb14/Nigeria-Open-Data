@@ -7,7 +7,7 @@ export default function AboutPage() {
       {/* Hero */}
       <section className="bg-slate-900 text-white py-24">
         <div className="container mx-auto px-4 max-w-4xl text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold mb-6 tracking-tight">About Nigeria Open Data</h1>
+          <h1 className="text-4xl md:text-5xl font-extrabold mb-6 tracking-tight">About Naija Open Data</h1>
           <p className="text-xl text-slate-400 leading-relaxed">
             Public data about Nigeria, gathered from many publishers into one place anyone can search and use.
           </p>

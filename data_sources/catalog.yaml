@@ -25,7 +25,7 @@
 #                tried by whoever builds the connector.
 #   notes        anything a connector author should know
 #
-# Last reviewed: 2026-10-11
+# Last reviewed: 2026-10-11. Re-check any time with: python scripts/verify_live.py
 
 sources:
 
@@ -40,7 +40,7 @@ sources:
     access: api
     integration: live
     licence: CC BY 4.0
-    checked: "2026-10-11: indicator and catalogue endpoints answered; response shape matches the connector. 7 of the 22 featured codes confirmed live; the rest were not reached because of rate limiting."
+    checked: "2026-10-11, live check on GitHub Actions: catalogue lists 1,498 indicators; all featured indicators returned Nigeria data."
     notes: pipeline/connectors/world_bank.py. Discovers the whole catalogue; no API key.
 
   - id: cbn-statistics
@@ -53,7 +53,7 @@ sources:
     access: file-download
     integration: live
     licence: check terms
-    checked: "2026-10-11: the two seeded Excel URLs did not download from the review environment. Replace them with current links from the statistics portal before relying on this source."
+    checked: "2026-10-11, live check: both seeded Excel links return HTTP 404. The source starts switched off until current links are entered."
     notes: pipeline/connectors/cbn.py. No discovery endpoint; each series needs its file URL and column map.
 
   - id: opendataforafrica-nigeria
@@ -66,7 +66,7 @@ sources:
     access: api
     integration: live
     licence: check terms
-    checked: "2026-10-11: the seeded dataset ids (NG_GDP_REAL, NG_UNEMP_RATE) are rejected by the API ('Requested dataset doesn't exist'). Real dataset ids from the portal are needed."
+    checked: "2026-10-11, live check: the seeded dataset ids (NG_GDP_REAL, NG_UNEMP_RATE) are rejected by the API. The source starts switched off until real ids are entered."
     notes: pipeline/connectors/nigeria_data_portal.py. One of the few sources with state-level series, so worth fixing.
 
   # ── Harvested (catalogue entries; files stay with the source) ───────────────
@@ -80,7 +80,7 @@ sources:
     access: ckan-api
     integration: harvested
     licence: varies by dataset (carried through per dataset)
-    checked: "Not reachable from the review environment (the portal's robots rules block automated readers there). Run `python -m pipeline.flows.harvest_flow hdx --dry-run` to confirm."
+    checked: "2026-10-11, live check: 454 Nigeria datasets match; 259 listed (the rest are archived or have no file link)."
     notes: pipeline/harvest. Also the usual home of GRID3, WFP, DHS and OCHA boundary files for Nigeria.
 
   - id: openafrica
@@ -93,7 +93,7 @@ sources:
     access: ckan-api
     integration: harvested
     licence: varies by dataset
-    checked: "Not reachable from the review environment. Confirm with a dry run."
+    checked: "2026-10-11, live check: 36 datasets tagged Nigeria; 31 listed."
     notes: Quality and freshness vary; the dataset page shows the original publisher and date.
 
   - id: energydata-info
@@ -106,7 +106,7 @@ sources:
     access: ckan-api
     integration: harvested
     licence: varies by dataset
-    checked: "Not reachable from the review environment. Confirm with a dry run; the country filter name comes from the portal's own URL."
+    checked: "2026-10-11, live check: 83 Nigeria datasets; all 83 listed."
     notes: Much of it is geospatial (shapefile, GeoJSON).
 
   # ── Planned: Nigerian official sources ──────────────────────────────────────

@@ -9,24 +9,24 @@ import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Nigeria Open Data Platform",
-    default: "Nigeria Open Data Platform - Public data about Nigeria in one place",
+    template: "%s | Naija Open Data Platform",
+    default: "Naija Open Data Platform - Public data about Nigeria in one place",
   },
   description: "Search, chart and download public data about Nigeria from many sources, each with its publisher, licence and last update.",
-  keywords: ["Nigeria open data", "Nigeria statistics", "Nigeria datasets", "CSV", "public data", "data API"],
-  authors: [{ name: "Nigeria Open Data Team" }],
-  creator: "Nigeria Open Data Platform",
-  publisher: "Nigeria Open Data Platform",
+  keywords: ["Naija Open Data", "Nigeria open data", "Nigeria statistics", "Nigeria datasets", "CSV", "public data", "data API"],
+  authors: [{ name: "Naija Open Data Team" }],
+  creator: "Naija Open Data Platform",
+  publisher: "Naija Open Data Platform",
   openGraph: {
     type: "website",
     locale: "en_NG",
-    siteName: "Nigeria Open Data Platform",
-    title: "Nigeria Open Data Platform",
+    siteName: "Naija Open Data Platform",
+    title: "Naija Open Data Platform",
     description: "Search, chart and download public data about Nigeria, with the source of every number shown.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nigeria Open Data Platform",
+    title: "Naija Open Data Platform",
     description: "Search, chart and download public data about Nigeria, with the source of every number shown.",
   },
 };

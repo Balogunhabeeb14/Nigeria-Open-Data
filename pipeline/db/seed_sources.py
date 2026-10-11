@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 
 # ── Default Source Registry Configurations ────────────────────────────────────
 DEFAULT_SOURCES = [
+    # Starts switched off: the dataset ids below are placeholders that the API
+    # rejects (confirmed against the live API, 2026-10-11). Put real ids from
+    # the portal here, then set is_active = true for the source.
     {
         "source_id": "NigeriaDataPortal",
+        "enabled": False,
         "connector": "pipeline.connectors.nigeria_data_portal.NigeriaDataPortalConnector",
         "transform": "pipeline.transforms.nigeria_data_portal_transform.transform",
         "domain": "economics",
@@ -46,8 +50,12 @@ DEFAULT_SOURCES = [
             },
         ],
     },
+    # Starts switched off: both file links below return 404 (confirmed
+    # 2026-10-11). Replace them with current links from statistics.cbn.gov.ng,
+    # then set is_active = true for the source.
     {
         "source_id": "CBN",
+        "enabled": False,
         "connector": "pipeline.connectors.cbn.CBNConnector",
         "transform": "pipeline.transforms.cbn_transform.transform",
         "domain": "economics",
@@ -102,7 +110,8 @@ DEFAULT_SOURCES = [
         ],
     },
     # World Bank World Development Indicators (JSON API, no key needed).
-    # The listed indicators are the featured set. With options.discover on,
+    # The listed indicators are the featured set (all confirmed to return
+    # Nigeria data from the live API on 2026-10-11). With options.discover on,
     # the connector also loads every other WDI indicator that has Nigeria
     # data (about 1,500 series exist in the catalogue; many are populated).
     {
@@ -135,7 +144,6 @@ DEFAULT_SOURCES = [
             {"id": "WB_FP_CPI_TOTL_ZG",    "dataset_id": "FP.CPI.TOTL.ZG",    "domain": "economy",        "name": "Inflation, consumer prices (annual %)"},
             {"id": "WB_SL_UEM_TOTL_ZS",    "dataset_id": "SL.UEM.TOTL.ZS",    "domain": "labour",         "name": "Unemployment, total (% of total labor force) (modeled ILO estimate)"},
             {"id": "WB_BX_TRF_PWKR_CD_DT", "dataset_id": "BX.TRF.PWKR.CD.DT", "domain": "economy",        "name": "Personal remittances, received (current US$)"},
-            {"id": "WB_NE_EXP_GNFS_ZS",    "dataset_id": "NE.EXP.GNFS.ZS",    "domain": "economy",        "name": "Exports of goods and services (% of GDP)"},
             {"id": "WB_SP_POP_TOTL",       "dataset_id": "SP.POP.TOTL",       "domain": "population",     "name": "Population, total"},
             {"id": "WB_SP_URB_TOTL_IN_ZS", "dataset_id": "SP.URB.TOTL.IN.ZS", "domain": "population",     "name": "Urban population (% of total population)"},
             {"id": "WB_SP_DYN_TFRT_IN",    "dataset_id": "SP.DYN.TFRT.IN",    "domain": "population",     "name": "Fertility rate, total (births per woman)"},

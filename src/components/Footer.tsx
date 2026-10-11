@@ -12,7 +12,7 @@ export default function Footer() {
             <div className="flex items-center gap-2 mb-4">
               <Database className="h-6 w-6 text-primary-500" />
               <span className="text-xl font-bold text-white tracking-tight">
-                Nigeria Open Data
+                Naija Open Data
               </span>
             </div>
             <p className="text-slate-400 max-w-sm mb-6">
@@ -54,7 +54,7 @@ export default function Footer() {
         </div>
         <div className="border-t border-slate-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm text-slate-500">
-            &copy; {new Date().getFullYear()} Nigeria Open Data. An independent project; not a government service. Data belongs to its publishers.
+            &copy; {new Date().getFullYear()} Naija Open Data. An independent project; not a government service. Data belongs to its publishers.
           </p>
           <p className="text-sm text-slate-500 mt-2 md:mt-0">
             Built for transparency.
