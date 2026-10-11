@@ -10,11 +10,23 @@ export interface CKANPackage {
   organization?: {
     title: string;
   };
+  /** Licence as CKAN knows it. Absent when the source did not state one. */
+  license_id?: string;
+  license_title?: string;
+  /** Link to the dataset at its original source. */
+  url?: string;
+  /** Key/value metadata written by the pipeline (source, coverage, licence...). */
+  extras?: { key: string; value: string }[];
   resources: {
     format: string;
     url: string;
     name: string;
   }[];
+}
+
+/** Read one of the pipeline's metadata values from a dataset. */
+export function getExtra(dataset: CKANPackage, key: string): string | undefined {
+  return dataset.extras?.find((e) => e.key === key)?.value || undefined;
 }
 
 /**

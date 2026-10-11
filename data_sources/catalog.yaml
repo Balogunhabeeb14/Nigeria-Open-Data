@@ -1,0 +1,580 @@
+# Naija Open Data: source catalogue
+#
+# Every source the platform uses, plans to use, or has decided not to use.
+# This file is the single list to consult before adding a connector, and the
+# test in pipeline/tests/test_source_catalog.py keeps it well formed.
+#
+# Fields
+#   id           short unique key
+#   name         what people call it
+#   publisher    who produces the data
+#   url          where a person would go to find it
+#   coverage     what it holds, in a line
+#   topics       platform topics it feeds
+#   geography    finest level usually available: national | state | lga | point
+#   access       api | ckan-api | sdmx | bulk-download | file-download | pdf | dashboard | restricted
+#   integration  live        loaded by a connector in this repo
+#                harvested   listed in the catalogue, files stay on the source portal
+#                planned     worth building next; see `priority`
+#                link-only   list as a document or link; do not copy or scrape
+#                excluded    not usable as open data
+#   priority     1 (next) to 3 (later); only for planned sources
+#   licence      stated licence if known, otherwise "check terms"
+#   checked      what was confirmed, and when. Blank means not yet verified:
+#                the URL and access method are from desk research and must be
+#                tried by whoever builds the connector.
+#   notes        anything a connector author should know
+#
+# Last reviewed: 2026-10-11
+
+sources:
+
+  # ── Live ────────────────────────────────────────────────────────────────────
+  - id: world-bank-wdi
+    name: World Development Indicators
+    publisher: World Bank
+    url: https://data.worldbank.org/country/nigeria
+    coverage: About 1,500 annual national indicators on the economy, health, education, energy, environment and more, many from 1960.
+    topics: [economy, health, education, energy, environment, agriculture, infrastructure, population, poverty, gender, labour]
+    geography: national
+    access: api
+    integration: live
+    licence: CC BY 4.0
+    checked: "2026-10-11: indicator and catalogue endpoints answered; response shape matches the connector. 7 of the 22 featured codes confirmed live; the rest were not reached because of rate limiting."
+    notes: pipeline/connectors/world_bank.py. Discovers the whole catalogue; no API key.
+
+  - id: cbn-statistics
+    name: CBN Statistics
+    publisher: Central Bank of Nigeria
+    url: https://statistics.cbn.gov.ng/
+    coverage: Monetary, external, fiscal and real-sector time series (rates, reserves, money supply, exchange rates, inflation).
+    topics: [economy]
+    geography: national
+    access: file-download
+    integration: live
+    licence: check terms
+    checked: "2026-10-11: the two seeded Excel URLs did not download from the review environment. Replace them with current links from the statistics portal before relying on this source."
+    notes: pipeline/connectors/cbn.py. No discovery endpoint; each series needs its file URL and column map.
+
+  - id: opendataforafrica-nigeria
+    name: Nigeria Data Portal (Open Data for Africa)
+    publisher: African Development Bank with the National Bureau of Statistics
+    url: https://nigeria.opendataforafrica.org/
+    coverage: Macro-economic and social indicators for Nigeria.
+    topics: [economy, population, health, education]
+    geography: state
+    access: api
+    integration: live
+    licence: check terms
+    checked: "2026-10-11: the seeded dataset ids (NG_GDP_REAL, NG_UNEMP_RATE) are rejected by the API ('Requested dataset doesn't exist'). Real dataset ids from the portal are needed."
+    notes: pipeline/connectors/nigeria_data_portal.py. One of the few sources with state-level series, so worth fixing.
+
+  # ── Harvested (catalogue entries; files stay with the source) ───────────────
+  - id: hdx
+    name: Humanitarian Data Exchange
+    publisher: UN OCHA
+    url: https://data.humdata.org/group/nga
+    coverage: Humanitarian and development datasets for Nigeria, including administrative boundaries, population, health facilities, food prices and displacement.
+    topics: [humanitarian, health, population, geography]
+    geography: lga
+    access: ckan-api
+    integration: harvested
+    licence: varies by dataset (carried through per dataset)
+    checked: "Not reachable from the review environment (the portal's robots rules block automated readers there). Run `python -m pipeline.flows.harvest_flow hdx --dry-run` to confirm."
+    notes: pipeline/harvest. Also the usual home of GRID3, WFP, DHS and OCHA boundary files for Nigeria.
+
+  - id: openafrica
+    name: openAFRICA
+    publisher: Code for Africa
+    url: https://open.africa/en/dataset/?tags=Nigeria
+    coverage: Volunteer-maintained African datasets; many Nigerian ones on budgets, elections, health, forestry and geodata.
+    topics: [government, health, environment, geography]
+    geography: state
+    access: ckan-api
+    integration: harvested
+    licence: varies by dataset
+    checked: "Not reachable from the review environment. Confirm with a dry run."
+    notes: Quality and freshness vary; the dataset page shows the original publisher and date.
+
+  - id: energydata-info
+    name: EnergyData.info
+    publisher: World Bank Group
+    url: https://energydata.info/dataset?vocab_country_names=NGA
+    coverage: Energy-sector data including grid maps, renewable resource maps, access and demand.
+    topics: [energy, geography]
+    geography: point
+    access: ckan-api
+    integration: harvested
+    licence: varies by dataset
+    checked: "Not reachable from the review environment. Confirm with a dry run; the country filter name comes from the portal's own URL."
+    notes: Much of it is geospatial (shapefile, GeoJSON).
+
+  # ── Planned: Nigerian official sources ──────────────────────────────────────
+  - id: nbs-elibrary
+    name: NBS reports and tables
+    publisher: National Bureau of Statistics
+    url: https://nigerianstat.gov.ng/elibrary
+    coverage: Official statistics releases (CPI, GDP, labour force, trade, state-level tables), mostly as PDF with Excel annexes.
+    topics: [economy, population, labour, prices]
+    geography: state
+    access: file-download
+    integration: planned
+    priority: 1
+    licence: check terms
+    checked: ""
+    notes: The most important Nigerian source and the main route to state-level data. Start with a curated handful of Excel annexes loaded through the file drop, not a scraper.
+
+  - id: nbs-microdata
+    name: NBS Microdata Catalogue (NADA)
+    publisher: National Bureau of Statistics
+    url: https://microdata.nigerianstat.gov.ng/index.php/home
+    coverage: Survey and census microdata with documentation (living standards, agriculture, labour, MICS).
+    topics: [population, poverty, agriculture, health]
+    geography: lga
+    access: file-download
+    integration: link-only
+    licence: per study; many need registration
+    checked: ""
+    notes: List studies and link to them. Do not redistribute microdata; access conditions differ per study.
+
+  - id: dmo
+    name: Debt Management Office statistics
+    publisher: Debt Management Office
+    url: https://www.dmo.gov.ng/
+    coverage: Federal and state domestic and external debt stock and service.
+    topics: [economy, government]
+    geography: state
+    access: file-download
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: State-level debt is a strong, comparable series for maps.
+
+  - id: budget-office
+    name: Budget Office of the Federation
+    publisher: Federal Ministry of Budget and Economic Planning
+    url: https://budgetoffice.gov.ng/
+    coverage: Appropriation acts, budget implementation reports, medium-term frameworks.
+    topics: [government, economy]
+    geography: national
+    access: pdf
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: PDF documents. List them; extract tables only for a few high-value lines.
+
+  - id: open-treasury
+    name: Open Treasury Portal
+    publisher: Office of the Accountant-General of the Federation
+    url: https://opentreasury.gov.ng/
+    coverage: Federal payment and budget performance reports.
+    topics: [government]
+    geography: national
+    access: file-download
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: Press coverage in 2026 describes publication as incomplete; check what is current before investing.
+
+  - id: bpp-nocopo
+    name: Nigeria Open Contracting Portal (NOCOPO)
+    publisher: Bureau of Public Procurement
+    url: https://data.open-contracting.org/en/publication/64
+    coverage: Federal procurement in the Open Contracting Data Standard; several states publish too.
+    topics: [government]
+    geography: state
+    access: bulk-download
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: The Open Contracting Data Registry offers the same data as JSON, Excel and CSV, which is easier than the portal itself.
+
+  - id: ncc
+    name: NCC industry statistics
+    publisher: Nigerian Communications Commission
+    url: https://www.ncc.gov.ng/
+    coverage: Subscribers, teledensity, broadband penetration, by operator and by state.
+    topics: [infrastructure]
+    geography: state
+    access: dashboard
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: nerc
+    name: NERC quarterly reports
+    publisher: Nigerian Electricity Regulatory Commission
+    url: https://nerc.gov.ng/
+    coverage: Generation, distribution company performance, metering, tariffs.
+    topics: [energy]
+    geography: state
+    access: pdf
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: nuprc
+    name: NUPRC production data
+    publisher: Nigerian Upstream Petroleum Regulatory Commission
+    url: https://www.nuprc.gov.ng/
+    coverage: Crude oil and gas production by stream and month.
+    topics: [energy, economy]
+    geography: national
+    access: file-download
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: neiti
+    name: NEITI audit reports
+    publisher: Nigeria Extractive Industries Transparency Initiative
+    url: https://neiti.gov.ng/
+    coverage: Oil, gas and solid-minerals revenue audits and FAAC disbursement reviews.
+    topics: [government, energy]
+    geography: state
+    access: pdf
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: inec
+    name: INEC election results and voter register statistics
+    publisher: Independent National Electoral Commission
+    url: https://www.inecnigeria.org/
+    coverage: Registered voters, polling units, declared results.
+    topics: [government]
+    geography: lga
+    access: file-download
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: Politically sensitive; publish only declared official figures with the source document linked.
+
+  - id: health-facility-registry
+    name: Nigeria Health Facility Registry
+    publisher: Federal Ministry of Health
+    url: https://hfr.health.gov.ng/
+    coverage: The master list of health facilities with type, ownership and location.
+    topics: [health, geography]
+    geography: point
+    access: dashboard
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: A facility list by LGA is one of the most requested Nigerian datasets. Check whether a bulk export is offered before considering anything else.
+
+  - id: ncdc
+    name: NCDC disease situation reports
+    publisher: Nigeria Centre for Disease Control and Prevention
+    url: https://ncdc.gov.ng/
+    coverage: Weekly epidemiological reports and outbreak situation reports by state.
+    topics: [health]
+    geography: state
+    access: pdf
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: grid3-nigeria
+    name: GRID3 Nigeria
+    publisher: GRID3
+    url: https://grid3.org/geospatial-data-nigeria
+    coverage: Settlements, population estimates, health facilities, schools and operational boundaries.
+    topics: [geography, population, health, education]
+    geography: point
+    access: file-download
+    integration: planned
+    priority: 1
+    licence: check terms (most layers are CC BY)
+    checked: "2026-10-11: listed on HDX and openAFRICA, so much of it arrives through harvesting."
+    notes: The best source for maps. Needed before any state or LGA map can be drawn.
+
+  - id: state-open-contracting
+    name: State open contracting publications
+    publisher: State governments (Edo, Abia, Ebonyi and others)
+    url: https://data.open-contracting.org/en/publication/102
+    coverage: State procurement data in the Open Contracting Data Standard, listed per state in the Open Contracting Data Registry (the link is Edo State's entry).
+    topics: [government]
+    geography: state
+    access: bulk-download
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: Coverage is uneven between states; say so on the site.
+
+  # ── Planned: international sources with Nigeria data ───────────────────────
+  - id: owid
+    name: Our World in Data
+    publisher: Global Change Data Lab
+    url: https://ourworldindata.org/country/nigeria
+    coverage: Cleaned long-run series on population, health, energy, environment and economy, compiled from UN, WHO, World Bank and others.
+    topics: [population, health, energy, environment, economy]
+    geography: national
+    access: api
+    integration: planned
+    priority: 1
+    licence: CC BY 4.0 (some charts carry third-party terms)
+    checked: ""
+    notes: Each chart offers CSV and metadata. Overlaps with the World Bank, so load only series the World Bank lacks.
+
+  - id: un-wpp
+    name: UN World Population Prospects
+    publisher: UN DESA Population Division
+    url: https://population.un.org/dataportal/home
+    coverage: Population estimates and projections to 2100 by age and sex; fertility, mortality, migration.
+    topics: [population]
+    geography: national
+    access: api
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: The Data Portal API needs a token requested from the UN.
+
+  - id: who-gho
+    name: WHO Global Health Observatory
+    publisher: World Health Organization
+    url: https://www.who.int/data/gho
+    coverage: Around two thousand health indicators (disease burden, immunisation, health workforce, risk factors).
+    topics: [health]
+    geography: national
+    access: api
+    integration: planned
+    priority: 1
+    licence: check terms
+    checked: ""
+    notes: Has an open OData API. Natural second connector after the World Bank; same shape of work.
+
+  - id: unicef
+    name: UNICEF Data Warehouse
+    publisher: UNICEF
+    url: https://data.unicef.org/country/nga/
+    coverage: Child health, nutrition, education, protection and WASH indicators, with disaggregation.
+    topics: [health, education, gender]
+    geography: national
+    access: sdmx
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: dhs
+    name: Demographic and Health Surveys (Nigeria)
+    publisher: The DHS Program with the National Population Commission
+    url: https://dhsprogram.com/Countries/Country-Main.cfm?ctry_id=30
+    coverage: Survey indicators on fertility, child health, nutrition, malaria and gender, by state and zone.
+    topics: [health, population, gender]
+    geography: state
+    access: api
+    integration: planned
+    priority: 1
+    licence: check terms (indicator data is open; microdata needs registration)
+    checked: ""
+    notes: One of the few sources with comparable state-level health indicators across survey years.
+
+  - id: faostat
+    name: FAOSTAT
+    publisher: Food and Agriculture Organization
+    url: https://www.fao.org/faostat/en/#country/159
+    coverage: Crop and livestock production, trade, food balances, land use, prices.
+    topics: [agriculture, environment]
+    geography: national
+    access: bulk-download
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: ilostat
+    name: ILOSTAT
+    publisher: International Labour Organization
+    url: https://ilostat.ilo.org/data/country-profiles/
+    coverage: Employment, unemployment, informality, wages, working conditions.
+    topics: [labour]
+    geography: national
+    access: sdmx
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: imf
+    name: IMF data (WEO, IFS)
+    publisher: International Monetary Fund
+    url: https://www.imf.org/en/Countries/NGA
+    coverage: Macroeconomic estimates and forecasts, balance of payments, government finance.
+    topics: [economy]
+    geography: national
+    access: api
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: Forecasts must be labelled as forecasts on the site.
+
+  - id: un-sdg
+    name: UN SDG Global Database
+    publisher: UN Statistics Division
+    url: https://unstats.un.org/sdgs/dataportal
+    coverage: Official indicators for the 17 Sustainable Development Goals.
+    topics: [poverty, health, education, environment, gender]
+    geography: national
+    access: api
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  - id: worldpop
+    name: WorldPop
+    publisher: University of Southampton
+    url: https://hub.worldpop.org/
+    coverage: Gridded population estimates and age-sex structures.
+    topics: [population, geography]
+    geography: point
+    access: file-download
+    integration: link-only
+    licence: check terms (generally CC BY 4.0)
+    checked: ""
+    notes: Large raster files; link out.
+
+  - id: global-forest-watch
+    name: Global Forest Watch
+    publisher: World Resources Institute
+    url: https://www.globalforestwatch.org/dashboards/country/NGA/
+    coverage: Tree cover, loss and gain by state.
+    topics: [environment]
+    geography: state
+    access: api
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: A more current source than the 2001 to 2014 forest tables on openAFRICA.
+
+  - id: wfp-food-prices
+    name: WFP food prices
+    publisher: World Food Programme
+    url: https://data.humdata.org/dataset/wfp-food-prices-for-nigeria
+    coverage: Monthly market prices of staple foods by market.
+    topics: [prices, agriculture, humanitarian]
+    geography: point
+    access: file-download
+    integration: planned
+    priority: 2
+    licence: check terms
+    checked: ""
+    notes: Listed through the HDX harvest; loading it properly would give charts by market and commodity.
+
+  - id: openaq
+    name: OpenAQ
+    publisher: OpenAQ
+    url: https://openaq.org/
+    coverage: Air-quality measurements from monitoring stations, where any exist.
+    topics: [environment, health]
+    geography: point
+    access: api
+    integration: planned
+    priority: 3
+    licence: check terms
+    checked: ""
+    notes: Station coverage in Nigeria is thin; check before promising it.
+
+  # ── Link only ───────────────────────────────────────────────────────────────
+  - id: budgit
+    name: BudgIT publications
+    publisher: BudgIT Foundation
+    url: https://budgit.org/publications/
+    coverage: Analysis of federal and state budgets, fiscal sustainability and public projects.
+    topics: [government, economy]
+    geography: state
+    access: pdf
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: PDF reports from a private organisation. Link to them; do not scrape.
+
+  - id: openstates
+    name: Open States (BudgIT)
+    publisher: BudgIT Foundation
+    url: https://openstates.ng/
+    coverage: State budgets, implementation reports and citizen budgets for the 36 states.
+    topics: [government]
+    geography: state
+    access: pdf
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: The same URL pattern works per state. Ask BudgIT about reuse before copying anything.
+
+  - id: datum-africa
+    name: Datum Africa
+    publisher: Datum Africa
+    url: https://datum.africa/
+    coverage: Open datasets on African economies, health, agriculture and demographics.
+    topics: [economy, health, agriculture]
+    geography: national
+    access: file-download
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: No public API. Mostly re-published from primary sources we can reach directly.
+
+  - id: afrobarometer
+    name: Afrobarometer
+    publisher: Afrobarometer
+    url: https://www.afrobarometer.org/countries/nigeria/
+    coverage: Public attitude surveys on democracy, governance, the economy and services.
+    topics: [government, society]
+    geography: state
+    access: file-download
+    integration: link-only
+    licence: check terms
+    checked: ""
+    notes: ""
+
+  # ── Excluded ────────────────────────────────────────────────────────────────
+  - id: dataphyte
+    name: Dataphyte
+    publisher: Dataphyte
+    url: https://dataphyte.org/products
+    coverage: Research, dashboards and civic-tech data products.
+    topics: [economy, government]
+    geography: state
+    access: restricted
+    integration: excluded
+    licence: proprietary
+    checked: ""
+    notes: Privately owned; bulk or API access needs an agreement. Could become a partner instead of a source.
+
+  - id: acled
+    name: ACLED conflict events
+    publisher: Armed Conflict Location and Event Data
+    url: https://acleddata.com/
+    coverage: Dated, located records of political violence and protest.
+    topics: [security]
+    geography: point
+    access: restricted
+    integration: excluded
+    licence: registration and terms restrict redistribution
+    checked: ""
+    notes: Cannot be republished as open data. Link to it if security data is requested.

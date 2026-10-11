@@ -1,104 +1,120 @@
 # Nigeria Open Data – Naija Open Data Platform
 
-Nigeria-Open-Data is an open data platform that automatically ingests, processes, and publishes public data about Nigeria across health, economics, and agriculture domains.
+Naija Open Data is an independent, open-source platform that collects public data about Nigeria from many sources and republishes it in one searchable catalogue, with every dataset's source, licence, coverage and last refresh shown.
 
-![Nigeria Open Data](./src/img/screenshot.jpeg)
+It is a volunteer project. It is not a government service.
 
 ---
 
-## System Architecture
+## What it does
+
+| | How | Where |
+|---|---|---|
+| **Loads indicator data** | Connectors pull time series, normalise them into one common table and publish each series to CKAN as a full, downloadable, queryable table | `pipeline/connectors`, `pipeline/transforms`, `pipeline/publisher.py` |
+| **Lists other portals' datasets** | A harvester copies catalogue entries (not files) from other CKAN portals, crediting the original publisher | `pipeline/harvest` |
+| **Tracks every source** | One catalogue of sources in use, planned, link-only and excluded | `data_sources/catalog.yaml` |
+
+### Sources today
+
+| Source | Status | Notes |
+|---|---|---|
+| World Bank, World Development Indicators | Live | 22 featured indicators plus the rest of the WDI catalogue (about 1,500 series) through discovery |
+| Humanitarian Data Exchange, openAFRICA, EnergyData.info | Harvested | Nigeria datasets listed with links to the original files |
+| CBN Statistics | Connector present | The seeded file URLs need replacing with current ones |
+| Nigeria Data Portal (Open Data for Africa) | Connector present | The seeded dataset ids are placeholders the API rejects |
+
+`data_sources/catalog.yaml` lists 40 sources with access method, licence, priority and what has been verified.
+
+---
+
+## System architecture
 
 ```mermaid
 graph TD
-    %% Frontend
-    User[User Browser] <--> |Next.js 16 / React Server Components| Frontend[Next.js App Router]
-    Frontend <--> |REST API / ISR Cache| CKAN[CKAN Portal Engine]
+    User[User browser] <--> Frontend[Next.js frontend]
+    Frontend <--> |REST API| CKAN[CKAN catalogue + DataStore]
 
-    %% Pipeline
-    subgraph Pipeline ["🔄 Ingestion Pipeline (Docker)"]
+    subgraph Pipeline ["Ingestion pipeline (Prefect)"]
         direction TB
-        Watcher[File Watcher\n15-min poll] --> |new files| Orchestrator
-        Scheduler[Prefect Scheduler] --> |daily / weekly| Orchestrator
-        Orchestrator[Prefect Worker] --> NDP[Nigeria Data Portal\nConnector]
-        Orchestrator --> CBN[CBN Statistics\nConnector]
-        Orchestrator --> QC[Quality Checks]
-        QC --> CDM[CDM Transform]
-        CDM --> PipelineDB[(Pipeline DB\nPostgres :5433\ncdm.indicator_observation)]
-        CDM --> CKAN
+        Scheduler[Schedules] --> Ingest[ingest flow]
+        Watcher[File watcher, 15 min] --> Ingest
+        Scheduler --> Harvest[harvest flow]
+        Ingest --> Conn[Connectors: World Bank, CBN, Nigeria Data Portal, file drop]
+        Conn --> QC[Quality checks]
+        QC --> CDM[(Pipeline DB: cdm.indicator_observation)]
+        CDM --> Pub[Publisher: full table per indicator]
     end
 
-    %% Data sources
-    NDP <--> |SDMX-JSON API / CSV| NigeriaPortal[nigeria.opendataforafrica.org]
-    CBN <--> |Excel bulk download| CBNSite[statistics.cbn.gov.ng]
-
-    %% Infrastructure
-    CKAN <--> Solr[Apache Solr\nSearch Index]
-    CKAN <--> CKANDb[(CKAN DB\nPostgres :5432)]
+    Pub --> CKAN
+    Harvest --> |catalogue entries only| CKAN
+    Conn <--> WB[api.worldbank.org]
+    Conn <--> CBNSite[statistics.cbn.gov.ng]
+    Harvest <--> Portals[HDX / openAFRICA / EnergyData.info]
+    CKAN <--> Solr[Solr] & CKANDb[(CKAN DB)]
 ```
 
-### Key design decisions
+### How a run stays dependable
 
-| Decision | Choice | Why |
-|---|---|---|
-| Orchestrator | **Prefect 3** | Fits into existing Docker stack with 2 extra services (vs Airflow's 4+). Pure Python. Self-hostable. |
-| CDM database | **Dedicated Postgres** (port 5433) | Professional isolation — pipeline data never shares a schema with CKAN |
-| Incremental strategy (APIs) | **Watermark table** (`cdm.ingest_manifest`) | Each run only fetches periods newer than the last successful load |
-| Incremental strategy (files) | **SHA-256 hash comparison** | Download CBN Excel → if hash unchanged → skip. No re-processing |
-| File-driven triggers | **15-min polling file watcher** | Drop a file in `data/raw/` → automatically ingested within 15 min |
-| Scrapers | **Isolated in `pipeline/scrapers/`** | Clearly separated from connectors; used only when no API or download exists |
+| Behaviour | What happens |
+|---|---|
+| **One failure is contained** | Each indicator has its own manifest row (`cdm.ingest_manifest`) with status and error. A failing indicator never stops the others. |
+| **Unchanged data is skipped** | The fetched rows are hashed. If the hash matches the last good run and the dataset is already on the portal, nothing is rewritten. |
+| **Revisions are picked up** | Sources that revise history (World Bank) are fetched whole each run; rows are upserted, so revised values replace old ones and nothing is duplicated. |
+| **The portal catches up** | A failed CKAN publish is recorded and retried on the next run even if the data has not changed. Data loaded before CKAN was configured is published once it is. |
+| **A dead source stops the run** | After 5 failures in a row (configurable) the run stops instead of retrying hundreds of indicators. The next scheduled run resumes. |
+| **Runs are idempotent** | Unique key `(source_system, indicator_id, geo_code, period)`; re-running never creates duplicates. |
 
 ---
 
-## Folder Structure
+## Folder structure
 
 ```
 Nigeria-Open-Data/
-├── Data/                            # Legacy ingestion (kept, backward compatible)
-│   ├── ingest.py                    # Original CSV → CKAN pipeline
-│   ├── scrape.py                    # Original Budget Office scraper
-│   └── requirements.txt
+├── data_sources/
+│   └── catalog.yaml               # Every source: in use, planned, link-only, excluded
 │
-├── pipeline/                        # Production pipeline
-│   ├── config.py                    # ← Add new sources/indicators here
-│   ├── deploy.py                    # Registers Prefect schedules
-│   ├── requirements.txt
-│   ├── Dockerfile
+├── pipeline/
+│   ├── api.py                     # FastAPI: publisher registration, uploads, read endpoints
+│   ├── scrape.py                  # FastAPI routes that trigger ingestion on demand
+│   ├── config.py                  # Reads source configuration from cdm.data_sources
+│   ├── registry.py                # Loads connector and transform classes by dotted path
+│   ├── publisher.py               # CKAN publishing: dataset + full DataStore table
+│   ├── deploy.py                  # Registers Prefect schedules
+│   ├── settings.py                # Environment configuration (pydantic-settings)
 │   │
-│   ├── connectors/                  # One file per data source
-│   │   ├── base.py                  # BaseConnector (HTTP retries, file hashing)
-│   │   ├── nigeria_data_portal.py   # SDMX-JSON API + CSV fallback
-│   │   └── cbn.py                   # Excel bulk download + hash detection
+│   ├── connectors/
+│   │   ├── base.py                # BaseConnector: HTTP retries, hashing, expand_indicators()
+│   │   ├── world_bank.py          # World Bank Indicators API, with catalogue discovery
+│   │   ├── cbn.py                 # CBN Excel downloads
+│   │   ├── nigeria_data_portal.py # Open Data for Africa API + CSV fallback
+│   │   ├── generic.py             # CSV / Excel / PDF files dropped in the landing zone
+│   │   └── s3.py                  # Object storage client
 │   │
-│   ├── transforms/                  # Raw → CDM mapping
-│   │   ├── cdm.py                   # CDMRecord dataclass (the schema)
-│   │   ├── nigeria_data_portal_transform.py
-│   │   └── cbn_transform.py
+│   ├── transforms/                # Raw rows → CDMRecord
+│   │   ├── cdm.py                 # The common data model
+│   │   └── *_transform.py
 │   │
-│   ├── quality/
-│   │   └── checks.py               # Schema, range, null, duplicate checks
+│   ├── harvest/
+│   │   ├── portals.py             # Which CKAN portals to harvest, filtered to Nigeria
+│   │   └── ckan_harvester.py      # Remote package_search → our catalogue
 │   │
+│   ├── flows/
+│   │   ├── ingest_flow.py         # fetch → validate → stage → transform → upsert → publish
+│   │   ├── harvest_flow.py        # Weekly catalogue harvest
+│   │   └── file_watcher_flow.py   # Every 15 minutes: new files in the landing zone
+│   │
+│   ├── quality/checks.py          # Row count, nulls, duplicates, value range
 │   ├── db/
-│   │   ├── schema.sql              # CDM DDL (run once on startup)
-│   │   └── warehouse.py           # SQLAlchemy DB helpers
-│   │
-│   ├── scrapers/                  # Last-resort only (clearly isolated)
-│   │   └── budget_office.py
-│   │
-│   └── flows/                     # Prefect orchestration entry points
-│       ├── nigeria_data_portal_flow.py   # Daily @ 02:00 UTC
-│       ├── cbn_flow.py                   # Weekly, Mon @ 03:00 UTC
-│       └── file_watcher_flow.py          # Every 15 minutes (event-driven)
+│   │   ├── schema.sql             # Tables and additive migrations (idempotent)
+│   │   ├── warehouse.py           # Database helpers
+│   │   └── seed_sources.py        # Default source definitions
+│   └── tests/                     # pytest suite (no network needed)
 │
-├── data/
-│   └── raw/                       # Landing zone (file watcher monitors this)
-│       ├── nigeria_data_portal/
-│       ├── cbn/
-│       └── budget_office/
-│
-├── src/                           # Next.js frontend (unchanged)
-├── docker-compose.yml             # All 7 services
-├── .env                           # Environment configuration
-└── .github/workflows/ingest.yml  # CI/CD (daily + on push)
+├── datapipeline/                  # Earlier Mage AI experiment; not used by the pipeline
+├── src/                           # Next.js frontend
+├── docker-compose.yml
+├── .env.example
+└── .github/workflows/             # tests.yml (pytest), ingest.yml (scheduled ingestion)
 ```
 
 ---
@@ -109,9 +125,9 @@ Every indicator from every source is normalised into a single table:
 
 ```sql
 -- cdm.indicator_observation (one row = one data point)
-source_system   TEXT    -- 'CBN' | 'NigeriaDataPortal'
-domain          TEXT    -- 'health' | 'economics' | 'agric'
-indicator_id    TEXT    -- 'GDP_REAL' | 'CBN_INTEREST_MPR'
+source_system   TEXT    -- 'WorldBank' | 'CBN' | 'NigeriaDataPortal' | <uploaded source id>
+domain          TEXT    -- 'economy' | 'health' | 'education' | 'energy' | ...
+indicator_id    TEXT    -- 'WB_NY_GDP_MKTP_CD' | 'CBN_INTEREST_MPR'
 indicator_name  TEXT    -- human-readable name
 geo_level       TEXT    -- 'national' | 'state' | 'lga'
 geo_code        TEXT    -- 'NG' | 'NG-LA'
@@ -119,209 +135,194 @@ geo_name        TEXT    -- 'Nigeria' | 'Lagos'
 period_type     TEXT    -- 'year' | 'quarter' | 'month'
 period          TEXT    -- '2024' | '2024Q1' | '2024-01'
 value           NUMERIC
-unit            TEXT    -- '%' | 'Naira' | 'USD'
+unit            TEXT
+raw_source_url  TEXT    -- where this number can be checked
 last_updated_at TIMESTAMPTZ
 ```
 
-Unique constraint on `(source_system, indicator_id, geo_code, period)` — re-running a flow never creates duplicates.
+### What reaches CKAN
+
+One indicator becomes one CKAN dataset (for example `ng-wb-ny-gdp-mktp-cd`) with:
+
+- a **DataStore resource** holding the full table, so download (`/datastore/dump/<id>`), the query API (`datastore_search`) and table preview all work;
+- **provenance**: source name and link, licence, unit, period covered, row count, last refresh;
+- a **topic** (CKAN group) from the indicator's domain.
 
 ---
 
-## Getting Started
+## Getting started
 
-### 1. Configure environment
+### 1. Configure
 
 ```bash
-cp .env.example .env
-# Edit .env and set your CKAN_API_KEY
+cp .env.example .env      # then set CKAN_API_KEY and the passwords
 ```
 
-### 2. Run everything with Docker
+### 2. Run with Docker
 
 ```bash
-# Start all services (CKAN + pipeline + databases)
 docker-compose up -d
-
-# Follow logs to watch the pipeline run
-docker-compose logs -f pipeline-worker
+docker-compose logs -f pipeline
 ```
 
-Services started:
-| Service | URL | Purpose |
-|---|---|---|
-| CKAN portal | http://localhost:5000 | Open data catalog |
-| Next.js frontend | http://localhost:3000 | Data discovery UI |
-| Prefect UI | http://localhost:4200 | Flow monitoring |
-| Pipeline DB | localhost:5433 | CDM + manifest |
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| CKAN | http://localhost:5000 |
+| Pipeline API | http://localhost:8000 |
+| Prefect UI | http://localhost:4200 |
+| Pipeline DB | localhost:5433 |
 
-### 3. Trigger a manual run
+### 3. Load data by hand
 
 ```bash
-# Manual backfill from 2020
-docker-compose exec pipeline-worker \
-  python -c "
-  from pipeline.flows.nigeria_data_portal_flow import nigeria_data_portal_flow
-  nigeria_data_portal_flow(start_period='2020')
-  "
+# A quick first run: the 22 featured World Bank indicators only
+docker-compose exec pipeline_db psql -U pipeline -c \
+  "UPDATE cdm.data_sources SET options = options || '{\"discover\": false}' WHERE source_id = 'WorldBank'"
+docker-compose exec pipeline python -m pipeline.flows.ingest_flow WorldBank
 
-# Or via GitHub Actions: go to Actions → Run workflow → enter start_period
+# Everything the World Bank publishes for Nigeria (about 1,500 requests; allow time)
+#   set "discover": true again, or cap it with "max_indicators": 200
+docker-compose exec pipeline python -m pipeline.flows.ingest_flow WorldBank
+
+# Check what other portals would add, without writing anything
+docker-compose exec pipeline python -m pipeline.flows.harvest_flow --dry-run --limit 20
+
+# Harvest for real
+docker-compose exec pipeline python -m pipeline.flows.harvest_flow
 ```
 
-### 4. Drop a file for immediate ingestion
+Built-in sources are re-seeded from `seed_sources.py` at start-up. Two things you set in the database are kept: `is_active`, and any `options` keys (as in the `discover` example above).
+
+### 4. Drop a file
+
+Put a CSV or Excel file in `data/raw/<landing_dir>/`. The file watcher picks it up within 15 minutes.
+
+### 5. Run the tests
 
 ```bash
-# Place any new CBN Excel file in the landing zone
-cp my_new_cbn_data.xlsx data/raw/cbn/
-
-# The file watcher will detect it within 15 minutes and trigger ingestion
+pip install -r pipeline/requirements.txt pytest
+docker run -d -p 5433:5432 -e POSTGRES_USER=pipeline -e POSTGRES_PASSWORD=pipeline \
+    -e POSTGRES_DB=pipeline postgres:15-alpine
+python -m pytest pipeline/tests -q
 ```
 
-### 5. Run without Docker (local development)
-
-```bash
-cd Nigeria-Open-Data
-pip install -r pipeline/requirements.txt
-
-# Apply schema (you need a local Postgres running on 5433)
-python -c "from pipeline.db.warehouse import run_schema_migrations; run_schema_migrations()"
-
-# Run one flow directly
-python -m pipeline.flows.nigeria_data_portal_flow
-```
+Sources and CKAN are faked, so no network is needed. Tests that need Postgres are skipped if it is not reachable.
 
 ---
 
-## How to Add a New Data Source
+## How to add a data source
 
-Adding a new source takes 3 steps:
+First add it to `data_sources/catalog.yaml`, with its licence. Then:
 
-### Step 1: Add to `pipeline/config.py`
+**A portal that runs CKAN** needs no code: add an entry to `pipeline/harvest/portals.py`.
 
-```python
-SOURCE_REGISTRY = [
-    # ... existing sources ...
-    {
-        "source_id": "WorldBank",
-        "connector": "pipeline.connectors.worldbank.WorldBankConnector",
-        "transform": "pipeline.transforms.worldbank_transform.transform",
-        "domain": "economics",
-        "schedule": "0 4 * * *",       # daily at 04:00 UTC
-        "landing_dir": "worldbank",
-        "indicators": [
-            {
-                "id": "WB_GDP_GROWTH",
-                "name": "GDP Growth Rate",
-                "dataset_id": "NY.GDP.MKTP.KD.ZG",
-                "domain": "economics",
-                "unit": "%",
-            }
-        ],
-    }
-]
-```
+**An API or file source** takes three steps:
 
-### Step 2: Create `pipeline/connectors/worldbank.py`
+### Step 1: a connector, `pipeline/connectors/<name>.py`
 
 ```python
 from pipeline.connectors.base import BaseConnector
 import pandas as pd
 
-class WorldBankConnector(BaseConnector):
-    source_id = "WorldBank"
-    landing_dir = "worldbank"
+class MyConnector(BaseConnector):
+    source_id = "MySource"
 
-    def discover(self):
-        # Return list of available indicators
-        ...
+    def discover(self) -> list[dict]:
+        ...   # optional: list what the source offers
 
-    def fetch(self, dataset_config, since=None):
-        # Download data (API or file), return DataFrame
-        ...
+    def fetch(self, dataset_config: dict, since: str | None = None) -> pd.DataFrame:
+        ...   # return raw rows; use self._http_get() for retries
 ```
 
-### Step 3: Create `pipeline/transforms/worldbank_transform.py`
+Override `expand_indicators()` if the source can list its own series, as `WorldBankConnector` does. Coverage then grows without anyone editing a list.
+
+### Step 2: a transform, `pipeline/transforms/<name>_transform.py`
 
 ```python
 from pipeline.transforms.cdm import CDMRecord, infer_period_type
 
 def transform(df, dataset_config) -> list[CDMRecord]:
-    # Map raw columns → CDMRecord fields
     ...
 ```
 
-That's it. The existing flows and file watcher will automatically pick up the new source.
-
-### Step 4 (optional): Add a new Prefect flow
-
-If you want a custom schedule, copy `pipeline/flows/cbn_flow.py`, update `SOURCE_ID`, and add it to `pipeline/deploy.py`.
-
----
-
-## How Scheduling Works
-
-| Flow | When | Why |
-|---|---|---|
-| `nigeria_data_portal_flow` | Daily, 02:00 UTC | API is fast; check daily for new periods |
-| `cbn_flow` | Weekly, Monday 03:00 UTC | CBN publishes monthly reports; daily is wasteful |
-| `file_watcher_flow` | Every 15 minutes | Detect manually dropped files quickly |
-
-**Manual backfill**: Trigger via Prefect UI → "Custom Run" → pass `start_period` parameter.  
-**CI backfill**: GitHub Actions → Run workflow → enter `start_period` input.
-
----
-
-## Debugging Failures
-
-### Check Prefect UI
-
-Open http://localhost:4200 → Flows → click a failed run → see per-task logs.
-
-### Check the pipeline run log table
-
-```sql
--- Connect to pipeline DB (port 5433)
-SELECT * FROM cdm.pipeline_run_log
-ORDER BY started_at DESC LIMIT 20;
-```
-
-### Check the manifest (watermarks)
-
-```sql
-SELECT * FROM cdm.ingest_manifest;
--- If status='failed', the watermark was NOT advanced — safe to re-run
-```
-
-### Re-run a specific indicator only
+### Step 3: a source definition in `pipeline/db/seed_sources.py`
 
 ```python
-from pipeline.flows.nigeria_data_portal_flow import (
-    fetch_api_data, validate_and_clean, load_to_stage, transform_to_cdm, upsert_to_cdm
-)
-config = {"id": "GDP_REAL", "name": "Real GDP", "dataset_id": "NG_GDP_REAL", "domain": "economics"}
-df = fetch_api_data.fn(config, start_period="2020")
-clean = validate_and_clean.fn(df, config)
-records = transform_to_cdm.fn(clean, config)
-upsert_to_cdm.fn(records)
+{
+    "source_id": "MySource",
+    "connector": "pipeline.connectors.my_source.MyConnector",
+    "transform": "pipeline.transforms.my_source_transform.transform",
+    "domain": "health",
+    "schedule": "0 4 * * 1",
+    "landing_dir": "my_source",
+    "ingest_mode": "api",              # 'api' | 'file' | 'document'
+    "options": {                       # shown to users on every dataset
+        "source_name": "Publisher, dataset family",
+        "source_url": "https://...",
+        "license_id": "cc-by",         # a CKAN licence id, or omit if unknown
+        "license_title": "Creative Commons Attribution 4.0 (CC BY 4.0)",
+    },
+    "indicators": [
+        {"id": "MY_INDICATOR", "name": "Readable name (unit)", "dataset_id": "source-code", "domain": "health"},
+    ],
+}
 ```
 
-### Docker logs
+If a source states no licence, leave the licence out. The dataset is then labelled "Not specified by the source" instead of being presented as open.
 
-```bash
-docker-compose logs pipeline-worker --tail=100 -f
-docker-compose logs pipeline-init
-```
+Add tests beside the others in `pipeline/tests/`; `fakes.py` has a CKAN stand-in and response builders.
 
 ---
 
-## Built With
+## Schedules
+
+| Deployment | When | What |
+|---|---|---|
+| `worldbank-ingestion` | Sundays 01:00 UTC | World Development Indicators |
+| `nigeriadataportal-ingestion` | Daily 02:00 UTC | Open Data for Africa |
+| `cbn-ingestion` | Mondays 03:00 UTC | CBN files |
+| `catalogue-harvest` | Saturdays 05:00 UTC | HDX, openAFRICA, EnergyData.info |
+| `file-watcher` | Every 15 minutes | New or changed files in the landing zone |
+
+Backfill: `python -m pipeline.flows.ingest_flow <source> --start-period 2020`.
+
+---
+
+## Debugging
+
+```sql
+-- What happened in recent runs ('success' | 'partial' | 'failed')
+SELECT flow_name, source_system, status, rows_cdm, error_message, started_at
+FROM cdm.pipeline_run_log ORDER BY started_at DESC LIMIT 20;
+
+-- Per indicator: data status, last period, and whether it reached the portal
+SELECT source_system, source_key, status, last_period, row_count, publish_state, error_message
+FROM cdm.ingest_manifest
+WHERE status = 'failed' OR publish_state = 'failed';
+```
+
+The Prefect UI (http://localhost:4200) has per-task logs for each run.
+
+---
+
+## Known gaps
+
+- The pipeline API's write endpoints (`/api/publishers`, `/api/sources`, `/api/upload`, `/scrape/*`) have no real access control. Do not expose port 8000 publicly until they are restricted.
+- The frontend's publisher form posts to routes that are not proxied to the pipeline API.
+- CBN and Nigeria Data Portal need real file URLs and dataset ids (see the source catalogue).
+- The scheduled GitHub Action (`ingest.yml`) writes to a database that is discarded when the job ends.
+- Dataset pages have no chart or table preview yet; the DataStore API they need is now in place.
+
+---
+
+## Built with
 
 - **Frontend**: Next.js 16 (TypeScript, React 19, Tailwind CSS)
-- **Data Catalog**: CKAN 2.10 + Apache Solr + Redis
-- **Ingestion Pipeline**: Python 3.11 (Pandas, SQLAlchemy, Requests, Tenacity)
-- **Orchestration**: Prefect 3
-- **Databases**: PostgreSQL 15 × 2 (CKAN DB + Pipeline CDM DB)
-- **Infrastructure**: Docker, Docker Compose
-- **CI/CD**: GitHub Actions (daily + on push)
+- **Data catalogue**: CKAN 2.10 + DataStore, Apache Solr, Redis
+- **Pipeline**: Python 3.11 (Pandas, SQLAlchemy, Requests, Tenacity), Prefect 3
+- **Databases**: PostgreSQL 15 × 2 (CKAN, pipeline)
+- **Infrastructure**: Docker Compose, GitHub Actions
 
 ---
 
@@ -329,7 +330,7 @@ docker-compose logs pipeline-init
 
 1. Fork the repository
 2. Create a feature branch
-3. For new data sources, follow the 3-step guide above
+3. For new data sources, add the source to `data_sources/catalog.yaml` and follow the guide above
 4. Submit a pull request with a description of the source and indicators added
 
 ---

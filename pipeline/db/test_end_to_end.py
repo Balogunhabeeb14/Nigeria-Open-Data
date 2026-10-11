@@ -52,6 +52,15 @@ def mock_download_file(self, url, dest):
     pass # Assume CSV is already placed by setup_mock_data
 
 
+def mock_world_bank_indicators(self):
+    return []   # World Bank has its own tests in pipeline/tests; keep this one offline
+
+def mock_world_bank_fetch(self, dataset_config, since=None):
+    return pd.DataFrame()
+
+
+@patch("pipeline.connectors.world_bank.WorldBankConnector.expand_indicators", new=mock_world_bank_indicators)
+@patch("pipeline.connectors.world_bank.WorldBankConnector.fetch", new=mock_world_bank_fetch)
 @patch("pipeline.connectors.cbn.CBNConnector._download_and_hash", new=mock_download_and_hash)
 @patch("pipeline.connectors.nigeria_data_portal.NigeriaDataPortalConnector._fetch_json_api", new=mock_fetch_json_api)
 @patch("pipeline.connectors.nigeria_data_portal.NigeriaDataPortalConnector._download_file", new=mock_download_file)

@@ -67,6 +67,17 @@ def build_deployments() -> list:
     deployments.append(watcher_deployment)
     logger.info("Registered deployment: file-watcher (every 15 min)")
 
+    # Catalogue harvest from other CKAN portals (HDX, openAFRICA, EnergyData)
+    from pipeline.flows.harvest_flow import harvest_flow
+
+    deployments.append(harvest_flow.to_deployment(
+        name="catalogue-harvest",
+        cron="0 5 * * 6",   # Saturdays @ 05:00 UTC
+        description="Lists Nigeria datasets from other open data portals in the catalogue.",
+        tags=["nigeria", "harvest"],
+    ))
+    logger.info("Registered deployment: catalogue-harvest (weekly)")
+
     return deployments
 
 

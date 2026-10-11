@@ -125,4 +125,28 @@ CREATE TABLE IF NOT EXISTS cdm.media_assets (
 CREATE INDEX IF NOT EXISTS idx_registry_search ON cdm.dataset_registry USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_media_dataset ON cdm.media_assets (dataset_id);
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Additive migrations (idempotent: safe on both new and existing databases)
+-- ─────────────────────────────────────────────────────────────────────────────
 
+-- Per-source settings that are not columns: licence, attribution, discovery
+-- switches, request pacing. See pipeline/db/seed_sources.py for the keys used.
+ALTER TABLE cdm.data_sources
+    ADD COLUMN IF NOT EXISTS options JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Change detection and publish tracking, kept apart from the period watermark.
+--   content_hash  : SHA-256 of the last successfully loaded file or payload.
+--   publish_state : 'published' | 'disabled' | 'failed' (last CKAN publish).
+ALTER TABLE cdm.ingest_manifest
+    ADD COLUMN IF NOT EXISTS content_hash  TEXT;
+ALTER TABLE cdm.ingest_manifest
+    ADD COLUMN IF NOT EXISTS publish_state TEXT;
+ALTER TABLE cdm.ingest_manifest
+    ADD COLUMN IF NOT EXISTS published_at  TIMESTAMPTZ;
+
+-- Older runs stored the file hash in last_period as 'hash:<sha>'. Move it to
+-- its own column so last_period only ever holds a period.
+UPDATE cdm.ingest_manifest
+SET    content_hash = substr(last_period, 6),
+       last_period  = NULL
+WHERE  last_period LIKE 'hash:%';

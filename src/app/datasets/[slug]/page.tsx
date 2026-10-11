@@ -1,4 +1,4 @@
-import { fetchDataset } from "@/lib/ckan";
+import { fetchDataset, getExtra } from "@/lib/ckan";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Download, Building2, Calendar, FileText, Tag, Database } from "lucide-react";
@@ -31,6 +31,19 @@ export default async function DatasetDetail({ params }: { params: Promise<{ slug
   if (!dataset) {
     notFound();
   }
+
+  // Provenance written by the pipeline. Shown as stated by the source; when a
+  // source gave no licence we say so instead of implying the data is open.
+  const licence =
+    getExtra(dataset, "licence_name") ||
+    (dataset.license_id && dataset.license_id !== "notspecified" ? dataset.license_title : undefined) ||
+    "Not specified by the source";
+  const licenceUrl = getExtra(dataset, "licence_url");
+  const source = getExtra(dataset, "source");
+  const sourceUrl = getExtra(dataset, "source_url") || dataset.url;
+  const coverageStart = getExtra(dataset, "temporal_start");
+  const coverageEnd = getExtra(dataset, "temporal_end");
+  const hostedExternally = getExtra(dataset, "hosted") === "external";
 
   return (
     <div className="container mx-auto px-4 py-12">
@@ -119,9 +132,49 @@ export default async function DatasetDetail({ params }: { params: Promise<{ slug
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">License</p>
-                  <p className="font-medium text-slate-900">Open Data License</p>
+                  {licenceUrl ? (
+                    <a href={licenceUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 hover:underline">
+                      {licence}
+                    </a>
+                  ) : (
+                    <p className="font-medium text-slate-900">{licence}</p>
+                  )}
                 </div>
               </li>
+
+              {(source || sourceUrl) && (
+                <li className="flex items-start gap-4">
+                  <div className="bg-slate-50 p-2 rounded-lg text-slate-400">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Source</p>
+                    {source && <p className="font-medium text-slate-900">{source}</p>}
+                    {sourceUrl && (
+                      <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary-700 hover:underline break-words">
+                        View at the original source
+                      </a>
+                    )}
+                    {hostedExternally && (
+                      <p className="text-sm text-slate-500 mt-1">Files are hosted by the original portal.</p>
+                    )}
+                  </div>
+                </li>
+              )}
+
+              {coverageStart && coverageEnd && (
+                <li className="flex items-start gap-4">
+                  <div className="bg-slate-50 p-2 rounded-lg text-slate-400">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Coverage</p>
+                    <p className="font-medium text-slate-900">
+                      {coverageStart === coverageEnd ? coverageStart : `${coverageStart} to ${coverageEnd}`}
+                    </p>
+                  </div>
+                </li>
+              )}
             </ul>
           </div>
         </aside>
