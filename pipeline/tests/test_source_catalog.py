@@ -48,6 +48,6 @@ def test_live_entries_have_a_connector(sources):
     from pipeline.db.seed_sources import DEFAULT_SOURCES
     live = [s for s in sources if s["integration"] == "live"]
     connectors = " ".join(src["connector"] for src in DEFAULT_SOURCES)
-    assert len(live) == 3
-    for module in ("world_bank", "cbn", "nigeria_data_portal"):
+    assert len(live) == 4
+    for module in ("world_bank", "dmo", "cbn", "nigeria_data_portal"):
         assert module in connectors

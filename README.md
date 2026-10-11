@@ -18,7 +18,8 @@ It is a volunteer project. It is not a government service.
 
 | Source | Status | Notes |
 |---|---|---|
-| World Bank, World Development Indicators | Live | 21 featured indicators plus the rest of the WDI catalogue (1,498 series listed) through discovery |
+| Debt Management Office, Nigeria | Live | Each state's domestic debt for every published quarter since 2011, read from the DMO's own documents and cross-checked against the total each document prints |
+| World Bank (8 databases) | Live | 21 featured indicators, then everything discovered: development indicators, governance, public sector debt, logistics, health, gender, financial inclusion, jobs. About 6,000 series are listed; many hold Nigeria data |
 | Humanitarian Data Exchange, openAFRICA, EnergyData.info | Harvested | About 370 Nigeria datasets listed with links to the original files |
 | CBN Statistics | Switched off | Connector present; the seeded file links return 404 and need replacing |
 | Nigeria Data Portal (Open Data for Africa) | Switched off | Connector present; the seeded dataset ids are placeholders the API rejects |
@@ -84,12 +85,14 @@ Nigeria-Open-Data/
 │   │   ├── local.py               # Built-in catalogue, driven like a CKAN client
 │   │   └── api.py                 # Its read API, in CKAN's shape
 │   ├── deploy.py                  # Registers Prefect schedules
+│   ├── geo.py                     # Nigeria's states: ISO codes and the spellings sources use
 │   ├── settings.py                # Environment configuration (pydantic-settings)
 │   ├── security.py                # Admin token and input checks for the API
 │   │
 │   ├── connectors/
 │   │   ├── base.py                # BaseConnector: HTTP retries, hashing, expand_indicators()
-│   │   ├── world_bank.py          # World Bank Indicators API, with catalogue discovery
+│   │   ├── world_bank.py          # World Bank Indicators API: several databases, with discovery
+│   │   ├── dmo.py                 # Debt Management Office: state debt from quarterly documents
 │   │   ├── cbn.py                 # CBN Excel downloads
 │   │   ├── nigeria_data_portal.py # Open Data for Africa API + CSV fallback
 │   │   ├── generic.py             # CSV / Excel / PDF files dropped in the landing zone
@@ -170,9 +173,9 @@ This starts two containers: Postgres, and one app container with the website, th
 
 On first start the loader fills the catalogue in this order, and the site shows datasets as they arrive:
 
-1. the 21 featured World Bank indicators (under a minute);
+1. state debt from the DMO and the 21 featured World Bank indicators (a few minutes);
 2. Nigeria datasets listed on HDX, openAFRICA and EnergyData.info;
-3. the rest of the World Bank catalogue (about 1,500 requests; let it run).
+3. everything else the World Bank databases hold for Nigeria (several thousand requests; this takes hours, and the site is usable throughout).
 
 It then refreshes weekly. Tune it with `BOOTSTRAP_FULL=false`, `BOOTSTRAP_HARVEST=false` or `REFRESH_HOURS` (see `pipeline/bootstrap.py`).
 
@@ -332,7 +335,8 @@ Add tests beside the others in `pipeline/tests/`; `fakes.py` has a CKAN stand-in
 
 | Deployment | When | What |
 |---|---|---|
-| `worldbank-ingestion` | Sundays 01:00 UTC | World Development Indicators |
+| `worldbank-ingestion` | Sundays 01:00 UTC | World Bank databases |
+| `dmo-ingestion` | Tuesdays 02:00 UTC | DMO state debt |
 | `nigeriadataportal-ingestion` | Daily 02:00 UTC | Open Data for Africa |
 | `cbn-ingestion` | Mondays 03:00 UTC | CBN files |
 | `catalogue-harvest` | Saturdays 05:00 UTC | HDX, openAFRICA, EnergyData.info |
@@ -393,7 +397,9 @@ curl -X POST http://localhost:8000/scrape/source/WorldBank -H "X-Admin-Token: $A
 - The website's old publisher sign-up form is no longer linked; publishing by outside organisations needs a proper sign-in before it is offered again.
 - The scheduled GitHub Action `ingest.yml` writes to a database that is discarded when the job ends, and has been failing; it predates this work.
 - No usage analytics or feedback form yet.
-- Charts cover one place over time. State and LGA tables are shown as tables; maps and multi-place charts are not built yet.
+- Data covering many places (states) shows a ranking and a per-place history; there are no maps yet.
+- No budget, spending or election-result data yet: the official sources publish these as PDF documents or have no downloadable results, and none has been turned into a dependable loader (see the source catalogue).
+- A full World Bank load makes several thousand requests one at a time and takes hours.
 - The full CKAN stack (`docker-compose.yml`) has not been run end to end since these changes; the lite set-up is the tested path.
 
 ---

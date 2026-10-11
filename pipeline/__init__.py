@@ -13,3 +13,8 @@ db/           – database I/O (SQLAlchemy, manifest table, CDM upserts)
 scrapers/     – last-resort HTML scrapers (clearly isolated)
 flows/        – Prefect orchestration flows (entry points)
 """
+
+import logging as _logging
+
+# Prefect's docstring parser warns about every flow parameter at import time.
+_logging.getLogger("griffe").setLevel(_logging.ERROR)

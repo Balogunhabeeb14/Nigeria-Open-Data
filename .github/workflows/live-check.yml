@@ -98,6 +98,8 @@ jobs:
           latest = [x for x in r if x['period'] == periods[-1]]
           print('  ', len(r), 'rows;', len(periods), 'quarters', periods[0], 'to', periods[-1], ';', len(latest), 'places in the newest')
           [print('  ', x['geo_name'], format(x['value'], ',.2f')) for x in sorted(latest, key=lambda x: -x['value'])[:5]]"
+              echo "   quarters loaded: $(docker compose -f docker-compose.lite.yml exec -T db psql -U pipeline -Atc "SELECT string_agg(period, ' ' ORDER BY period) FROM (SELECT DISTINCT period FROM cdm.indicator_observation WHERE indicator_id = 'DMO_STATE_DOMESTIC_DEBT') q")"
+              echo "   total series, last 3: $(docker compose -f docker-compose.lite.yml exec -T db psql -U pipeline -Atc "SELECT string_agg(period || '=' || value, '  ' ORDER BY period) FROM (SELECT period, value FROM cdm.indicator_observation WHERE indicator_id = 'DMO_STATES_DOMESTIC_DEBT_TOTAL' ORDER BY period DESC LIMIT 3) q")"
             else
               echo "   not loaded"
             fi
@@ -133,7 +135,7 @@ jobs:
           docker compose -f docker-compose.lite.yml logs --no-color app > app.log 2>&1 || true
           grep -v "✅\|── \[\|Fetching\|Fetched\|Staged\|Upserted\|Transformed\|Quality Report\|PASS |" app.log | tail -150
           # Problems and the loader's own summary lines, as an annotation.
-          grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | cut -c1-300 | tail -40 > loader.txt || true
+          grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | grep -v griffe | cut -c1-330 | tail -40 > loader.txt || true
           [ -s loader.txt ] && echo "::notice title=Loader log::$(sed 's/%/%25/g' loader.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
 
   full:

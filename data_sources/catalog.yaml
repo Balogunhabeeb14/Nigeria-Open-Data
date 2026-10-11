@@ -31,17 +31,17 @@ sources:
 
   # ── Live ────────────────────────────────────────────────────────────────────
   - id: world-bank-wdi
-    name: World Development Indicators
+    name: World Bank Open Data
     publisher: World Bank
     url: https://data.worldbank.org/country/nigeria
-    coverage: About 1,500 annual national indicators on the economy, health, education, energy, environment and more, many from 1960.
-    topics: [economy, health, education, energy, environment, agriculture, infrastructure, population, poverty, gender, labour]
+    coverage: World Development Indicators plus the governance, public sector debt, logistics, health, gender, financial inclusion and jobs databases. About 6,000 series, many annual from 1960.
+    topics: [economy, health, education, energy, environment, agriculture, infrastructure, population, poverty, gender, labour, government, debt, transport, trade]
     geography: national
     access: api
     integration: live
     licence: CC BY 4.0
-    checked: "2026-10-11, live check on GitHub Actions: catalogue lists 1,498 indicators; all featured indicators returned Nigeria data."
-    notes: pipeline/connectors/world_bank.py. Discovers the whole catalogue; no API key.
+    checked: "2026-10-11, live check on GitHub Actions: all featured indicators returned Nigeria data; each database listed below was sampled and returned Nigeria data (2 WDI 1,498 indicators; 3 Governance 36; 20 Quarterly Public Sector Debt 564; 66 Logistics 19; 16 Health 475; 14 Gender 1,411; 28 Findex 3,313; 25 Jobs 166)."
+    notes: pipeline/connectors/world_bank.py. No API key. International Debt Statistics (database 6) is not served by the simple endpoint and is not loaded. Subnational databases (5, 38, 50) use region codes and are a route to state-level data later.
 
   - id: cbn-statistics
     name: CBN Statistics
@@ -140,16 +140,15 @@ sources:
   - id: dmo
     name: Debt Management Office statistics
     publisher: Debt Management Office
-    url: https://www.dmo.gov.ng/
-    coverage: Federal and state domestic and external debt stock and service.
-    topics: [economy, government]
+    url: https://www.dmo.gov.ng/debt-profile/sub-national-debts
+    coverage: Each state's domestic debt stock at every quarter end since 2011; also state and federal external debt and total public debt.
+    topics: [debt, government]
     geography: state
     access: file-download
-    integration: planned
-    priority: 2
+    integration: live
     licence: check terms
-    checked: ""
-    notes: State-level debt is a strong, comparable series for maps.
+    checked: "2026-10-11, live check: 38 quarterly state domestic-debt documents listed (2011Q4 to 2026Q2); newest read in full, state figures matching the printed total to the kobo."
+    notes: pipeline/connectors/dmo.py loads the state domestic-debt documents. Not yet loaded and worth adding next - the external debt documents (same page) and "Nigeria's Total Public Debt" (www.dmo.gov.ng/debt-profile/total-public-debts), which have more columns.
 
   - id: budget-office
     name: Budget Office of the Federation

@@ -134,7 +134,11 @@ def check_dmo() -> list[dict]:
 
     accepted, with_gaps, rejected, raw = [], [], [], []
     newest_detail = ""
-    for document in documents:
+    # A sample is enough to know the reader still works, and is kinder to the
+    # DMO's server than fetching every document on every check: the three
+    # newest quarters, one from the middle and the oldest.
+    sample = documents[:3] + [documents[len(documents) // 2], documents[-1]] if len(documents) > 5 else documents
+    for document in sample:
         try:
             amounts, total = connector.read_document(document)
         except Exception as exc:
@@ -155,7 +159,7 @@ def check_dmo() -> list[dict]:
                              f"stated total {total if total is None else format(total, ',.2f')}; "
                              f"largest {[(STATES[c], round(v / 1e9, 1)) for c, v in top]} (billions of naira)")
     rows.append({"check": "DMO newest accepted quarter", "status": OK if newest_detail else FAIL, "detail": newest_detail or "none"})
-    rows.append({"check": "DMO quarters accepted (figures add up to the document's total)",
+    rows.append({"check": f"DMO quarters accepted of {len(sample)} sampled (figures add up to the document's total)",
                  "status": OK if accepted else FAIL, "detail": f"{len(accepted)}: {', '.join(sorted(accepted))}"})
     if with_gaps:
         rows.append({"check": "DMO quarters accepted, document omits a state", "status": WARN, "detail": ", ".join(sorted(with_gaps))})

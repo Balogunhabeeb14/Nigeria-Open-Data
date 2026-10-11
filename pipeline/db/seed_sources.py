@@ -184,10 +184,13 @@ DEFAULT_SOURCES = [
             "country": "NGA",
             # World Bank databases to read, in priority order. An indicator in
             # several is taken from the first. All share one API and licence.
+            # Each was sampled against the live API on 2026-10-11 and returned
+            # Nigeria data. International Debt Statistics (id 6) is left out:
+            # its series are not served by this endpoint ("indicator was not
+            # found"); the headline debt series are in the main database.
             "databases": [
                 {"id": 2,  "name": "World Development Indicators"},
                 {"id": 3,  "name": "Worldwide Governance Indicators", "domain": "government"},
-                {"id": 6,  "name": "International Debt Statistics", "domain": "debt"},
                 {"id": 20, "name": "Quarterly Public Sector Debt", "domain": "debt"},
                 {"id": 66, "name": "Logistics Performance Index", "domain": "transport"},
                 {"id": 16, "name": "Health Nutrition and Population Statistics", "domain": "health"},
