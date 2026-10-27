@@ -116,6 +116,9 @@ def task_publish(source_id: str, indicator_config: dict, record_count: int) -> N
     if published:
         log.info("[%s/%s] Published to CKAN", source_id, indicator_config["id"])
     else:
+        from pipeline.settings import settings
+        if settings.ckan_key():
+            raise RuntimeError("Catalog publication failed; the successful watermark was not advanced")
         log.info("[%s/%s] CKAN publish skipped (no API key)", source_id, indicator_config["id"])
 
 
@@ -163,6 +166,7 @@ def task_register_document(source_id: str, indicator_config: dict) -> None:
 def ingest_flow(
     source_id: str,
     start_period: str | None = None,
+    job_id: str | None = None,
 ) -> dict:
     """Run the full ingestion pipeline for all indicators of a registered source.
 
@@ -175,6 +179,13 @@ def ingest_flow(
     Returns:
         Summary dict: {indicator_id: {status, rows, watermark}} per indicator.
     """
+    if job_id:
+        from pipeline.portal.processing import process_job
+        result = process_job(source_id, job_id)
+        if result.get("status") == "failed":
+            raise RuntimeError(f"Publisher job failed: {result['error_code']}. See the dashboard.")
+        return result
+
     from pipeline.db.warehouse import log_run_finish, log_run_start, run_schema_migrations
 
     log = get_run_logger()
@@ -239,7 +250,8 @@ def ingest_flow(
                 )
                 summary[indicator_id] = {"status": "failed", "error": str(exc)}
 
-        log_run_finish(run_id, "success", rows_staged=total_staged, rows_cdm=total_cdm)
+        failed = any(item.get("status") == "failed" for item in summary.values())
+        log_run_finish(run_id, "failed" if failed else "success", rows_staged=total_staged, rows_cdm=total_cdm)
         log.info(
             "=== Flow complete [%s]: %d staged / %d CDM rows ===",
             source_id, total_staged, total_cdm,
@@ -250,6 +262,8 @@ def ingest_flow(
         log_run_finish(run_id, "failed", error_message=str(exc))
         raise
 
+    if failed:
+        raise RuntimeError("One or more indicators failed; inspect the ingestion history")
     return summary
 
 

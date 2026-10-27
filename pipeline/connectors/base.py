@@ -65,9 +65,13 @@ class BaseConnector(ABC):
 
     def landing_path(self, filename: str) -> Path:
         """Return the full local path for a file in this source's landing folder."""
-        folder = settings.landing_root / self.landing_dir
+        root = settings.landing_root.resolve()
+        folder = (root / self.landing_dir).resolve()
+        result = (folder / filename).resolve()
+        if not folder.is_relative_to(root) or not result.is_relative_to(folder):
+            raise ValueError("Landing paths must remain inside the configured storage root")
         folder.mkdir(parents=True, exist_ok=True)
-        return folder / filename
+        return result
 
     @staticmethod
     def file_hash(path: Path) -> str:
@@ -89,13 +93,18 @@ class BaseConnector(ABC):
 
         Retry count and timeout come from settings (not hardcoded).
         """
-        logger.debug("GET %s", url)
-        response = requests.get(
-            url,
-            timeout=settings.request_timeout_seconds,
-            **kwargs,
-        )
-        response.raise_for_status()
+        from pipeline.portal.remote import get, with_params
+        params = kwargs.pop("params", {})
+        kwargs.pop("stream", None)
+        if kwargs:
+            raise ValueError("Custom HTTP options require an approved connector")
+        data, media_type = get(with_params(url, params))
+        response = requests.Response()
+        response.status_code = 200
+        response._content = data
+        response._content_consumed = True
+        response.headers["Content-Type"] = media_type
+        response.url = url
         return response
 
     def _download_file(self, url: str, dest: Path) -> Path:

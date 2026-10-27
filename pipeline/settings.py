@@ -36,6 +36,15 @@ class Settings(BaseSettings):
 
     # ── Frontend Security ─────────────────────────────────────────────────────
     frontend_url: str = "http://localhost:3000"
+    portal_secret_key: SecretStr | None = None
+    portal_cookie_secure: bool = True
+    portal_session_hours: int = 24
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_starttls: bool = True
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str = "noreply@example.invalid"
 
     # ── Landing zone ──────────────────────────────────────────────────────────
     landing_root: Path = Path("data/raw")
@@ -74,6 +83,12 @@ class Settings(BaseSettings):
     def ensure_landing_root_exists(self) -> Settings:
         """Create landing zone root directory on startup."""
         self.landing_root.mkdir(parents=True, exist_ok=True)
+        from urllib.parse import urlsplit
+        origin = urlsplit(self.frontend_url)
+        if not self.portal_cookie_secure and origin.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Insecure session cookies are restricted to local development")
+        if not 1 <= self.portal_session_hours <= 168:
+            raise ValueError("Session lifetime must be between 1 and 168 hours")
         return self
 
     # ── Convenience helpers ───────────────────────────────────────────────────

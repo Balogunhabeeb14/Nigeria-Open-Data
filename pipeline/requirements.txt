@@ -1,4 +1,6 @@
 pandas==2.2.0
+# pandas 2.2.0 binary wheels predate NumPy 2 compatibility.
+numpy==1.26.4
 ckanapi==4.7
 requests==2.31.0
 python-dotenv==1.0.1
@@ -23,6 +25,8 @@ pdfplumber==0.11.0
 fastapi
 uvicorn
 python-multipart
+argon2-cffi==23.1.0
+defusedxml==0.7.1
 
 # ── Media & Storage ──────────────────────────────────────────────────────────
 boto3==1.34.34

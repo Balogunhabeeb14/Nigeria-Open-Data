@@ -169,7 +169,7 @@ class QualityRunner:
             row_count=len(df),
         )
 
-        col_map = indicator_config.get("col_map", {})
+        col_map = indicator_config.get("col_map") or {}
         period_col = next((k for k, v in col_map.items() if v == "period"), "TIME_PERIOD")
         value_col  = next((k for k, v in col_map.items() if v == "value"),  "OBS_VALUE")
 

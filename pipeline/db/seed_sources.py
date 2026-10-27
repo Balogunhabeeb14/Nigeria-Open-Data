@@ -106,15 +106,7 @@ def seed_default_sources() -> int:
             :source_id, :connector, :transform, :domain, :schedule, 
             :landing_dir, :ingest_mode, CAST(:indicators AS JSONB), true
         )
-        ON CONFLICT (source_id) DO UPDATE SET
-            connector   = EXCLUDED.connector,
-            transform   = EXCLUDED.transform,
-            domain      = EXCLUDED.domain,
-            schedule    = EXCLUDED.schedule,
-            landing_dir = EXCLUDED.landing_dir,
-            ingest_mode = EXCLUDED.ingest_mode,
-            indicators  = EXCLUDED.indicators,
-            is_active   = true;
+        ON CONFLICT (source_id) DO NOTHING;
     """)
 
     seeded_count = 0

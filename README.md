@@ -136,15 +136,31 @@ cp .env.example .env
 # Edit .env and set your CKAN_API_KEY
 ```
 
+If you change the pipeline database credentials, update both `PIPELINE_DB_URL`
+(local development: `localhost:5433`) and `PIPELINE_CONTAINER_DB_URL`
+(Docker: `pipeline_db:5432`). URL-encode special characters in URL passwords.
+Existing PostgreSQL volumes keep their original credentials; changing environment
+variables does not reset a database password.
+
 ### 2. Run everything with Docker
 
 ```bash
 # Start all services (CKAN + pipeline + databases)
-docker-compose up -d
+docker compose up -d --build
 
 # Follow logs to watch the pipeline run
-docker-compose logs -f pipeline-worker
+docker compose logs -f pipeline mage prefect-server
 ```
+
+Mage is built from a clean Python base with `mage-ai==0.9.79`, replacing the
+locally damaged prebuilt image. The first build downloads
+Python dependencies. CKAN's DataStore database and read-only role are initialized
+automatically, including on existing volumes. Prefect runs the scheduled Python
+ingestion flows; Mage is available separately at http://localhost:6789.
+
+If Docker reports `invalid ELF header`, `Input/output error`, or `ENOSPC`, check
+host disk space with `df -h .` before rebuilding. Keep enough free space for image
+downloads and intermediate build layers; a full host disk can corrupt Docker files.
 
 Services started:
 | Service | URL | Purpose |

@@ -1,4 +1,4 @@
-const CKAN_URL = process.env.NEXT_PUBLIC_CKAN_URL || 'http://localhost:5000';
+const CKAN_URL = process.env.CKAN_URL || process.env.NEXT_PUBLIC_CKAN_URL || 'http://localhost:5000';
 
 export interface CKANPackage {
   id: string;
@@ -25,12 +25,12 @@ export async function fetchDatasets(query: string = '', rows: number = 10, filte
   try {
     let url = `${CKAN_URL}/api/3/action/package_search?q=${encodeURIComponent(query)}&rows=${rows}`;
     if (filterQuery) {
-        url += `&fq=${encodeURIComponent(filterQuery)}`;
+      url += `&fq=${encodeURIComponent(filterQuery)}`;
     }
     const res = await fetch(url, {
       next: { revalidate: 60 } // Cache for 60 seconds
     });
-    
+
     if (!res.ok) {
       console.warn(`CKAN API error: ${res.status}`);
       return [];
@@ -103,7 +103,7 @@ export async function fetchDataset(slug: string): Promise<CKANPackage | null> {
     const res = await fetch(`${CKAN_URL}/api/3/action/package_show?id=${encodeURIComponent(slug)}`, {
       next: { revalidate: 60 }
     });
-    
+
     if (!res.ok) {
       console.warn(`CKAN API error: ${res.status}`);
       return null;

@@ -82,12 +82,18 @@ def scan_landing_zone() -> list[dict]:
 
         for source_id in list_source_ids():
             source_cfg = get_source_config(source_id)
+            if source_cfg.get("ingest_mode") == "publisher":
+                continue  # Publisher files are processed only by authorised outbox jobs.
             folder     = settings.landing_root / source_cfg["landing_dir"]
+            if not folder.resolve().is_relative_to(settings.landing_root.resolve()):
+                continue
 
             if not folder.exists():
                 continue
 
             for file_path in sorted(folder.iterdir()):
+                if not file_path.is_file() or file_path.is_symlink():
+                    continue
                 if file_path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
                     continue
 
@@ -131,7 +137,8 @@ def trigger_source_ingestion(file_info: dict) -> dict:
         engine = get_engine()
         with engine.begin() as conn:
             _ensure_watcher_table(conn)
-            _mark_processed(conn, file_info["file_path"], file_info["file_hash"], source_id)
+            for changed in file_info.get("changes", [file_info]):
+                _mark_processed(conn, changed["file_path"], changed["file_hash"], source_id)
 
         log.info("✅ Ingestion complete for %s/%s", source_id, filename)
 
@@ -169,7 +176,7 @@ def file_watcher_flow() -> dict:
     unique_changes = []
     for change in changes:
         if change["source_id"] not in seen_sources:
-            unique_changes.append(change)
+            unique_changes.append({**change, "changes": [item for item in changes if item["source_id"] == change["source_id"]]})
             seen_sources.add(change["source_id"])
 
     results = [trigger_source_ingestion(ch) for ch in unique_changes]

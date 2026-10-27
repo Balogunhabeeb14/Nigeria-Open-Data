@@ -42,9 +42,8 @@ def get_engine() -> Engine:
 
 def run_schema_migrations() -> None:
     """Execute schema.sql against the pipeline database. Idempotent — safe to re-run."""
-    sql = _SCHEMA_FILE.read_text()
-    with get_engine().begin() as conn:
-        conn.execute(text(sql))
+    from pipeline.db.migrate import migrate
+    migrate(get_engine())
     logger.info("Schema migrations applied.")
 
     try:
@@ -66,7 +65,7 @@ def get_watermark(source_system: str, source_key: str) -> str | None:
         FROM   cdm.ingest_manifest
         WHERE  source_system = :source
           AND  source_key    = :key
-          AND  status        = 'success'
+          AND  last_period IS NOT NULL
     """)
     with get_engine().connect() as conn:
         row = conn.execute(sql, {"source": source_system, "key": source_key}).fetchone()
@@ -99,7 +98,7 @@ def update_manifest(
         ON CONFLICT (source_system, source_key)
         DO UPDATE SET
             last_ingested  = EXCLUDED.last_ingested,
-            last_period    = EXCLUDED.last_period,
+            last_period    = COALESCE(CASE WHEN EXCLUDED.status = 'success' THEN EXCLUDED.last_period END, cdm.ingest_manifest.last_period),
             row_count      = EXCLUDED.row_count,
             status         = EXCLUDED.status,
             error_message  = EXCLUDED.error_message
