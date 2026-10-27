@@ -40,7 +40,7 @@ export default function TermsPage() {
             <AlertTriangle className="w-5 h-5 text-primary-600" /> Disclaimer of Warranties
           </h2>
           <p>
-            Data is provided on an "as-is" and "as-available" basis. We make no guarantees regarding the completeness, accuracy, or continuous availability of any information hosted on this platform. Use of public datasets is at the sole discretion and risk of the user.
+            Data is provided on an &quot;as-is&quot; and &quot;as-available&quot; basis. We make no guarantees regarding the completeness, accuracy, or continuous availability of any information hosted on this platform. Use of public datasets is at the sole discretion and risk of the user.
           </p>
         </section>
 

@@ -324,6 +324,8 @@ def test_cbn_keeps_loading_after_its_first_run(monkeypatch):
 
 
 def test_legacy_hash_watermarks_are_migrated(database):
+    # Simulate upgrading a database that has not applied the catalogue migration.
+    execute("DELETE FROM cdm.schema_migrations WHERE version = '0003_catalog_and_publish_tracking'")
     execute("""
         INSERT INTO cdm.ingest_manifest (source_system, source_key, last_period, row_count, status)
         VALUES ('CBN', 'LEGACY', 'hash:abc123', 5, 'success')

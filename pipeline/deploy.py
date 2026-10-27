@@ -33,6 +33,8 @@ def build_deployments() -> list:
 
     for source_id in source_ids:
         source = get_source_config(source_id)
+        if source.get("ingest_mode") == "publisher":
+            continue  # General datasets are scheduled through the durable job outbox.
         cron = source.get("schedule")
         
         # Only create scheduled deployments for those with a cron
@@ -67,6 +69,9 @@ def build_deployments() -> list:
     deployments.append(watcher_deployment)
     logger.info("Registered deployment: file-watcher (every 15 min)")
 
+    from pipeline.flows.portal_dispatcher import portal_dispatcher
+    deployments.append(ingest_flow.to_deployment(name="publisher-job", tags=["publisher", "ingestion"]))
+    deployments.append(portal_dispatcher.to_deployment(name="publisher-dispatcher", cron="* * * * *", tags=["publisher", "outbox"]))
     # Catalogue harvest from other CKAN portals (HDX, openAFRICA, EnergyData)
     from pipeline.flows.harvest_flow import harvest_flow
 

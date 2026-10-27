@@ -1,278 +1,86 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
+"""One authenticated publisher API; public catalog browsing remains anonymous."""
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Optional
-import json
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from pipeline.settings import settings
+from pipeline.portal import auth, datasets, legacy, organisations
+from pipeline.portal.security import principal, rate_limit
+
+app = FastAPI(title="Nigeria Open Data - Publisher API", version="2.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_url.rstrip("/")], allow_credentials=True,
+                   allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "X-CSRF-Token", "Idempotency-Key", "Authorization"])
+
 from sqlalchemy import text
 from pipeline.db.warehouse import get_engine
 
-app = FastAPI(
-    title="Naija Open Data - Ingestion API",
-    description=(
-        "Read endpoints are open. Endpoints that change the platform need the "
-        "X-Admin-Token header and are off until ADMIN_API_TOKEN is set."
-    ),
-    version="1.0.0"
-)
-
-from pipeline.settings import settings
-from pipeline.scrape import router as scrape_router
-from pipeline.security import (
-    MAX_UPLOAD_BYTES,
-    check_code_path,
-    check_identifier,
-    check_upload_name,
-    require_admin,
-)
-
-# Add CORS middleware to allow requests from the Next.js frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.frontend_url],
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Admin-Token"],
-)
-
-# Triggering ingestion is an admin action.
-app.include_router(scrape_router, dependencies=[Depends(require_admin)])
-
-# Built-in catalogue (read-only). Only when this app is the catalogue; with
-# CATALOG_BACKEND=ckan those routes belong to the CKAN server.
 if settings.catalog_backend == "local":
     from pipeline.catalog.api import router as catalog_router
     app.include_router(catalog_router)
 
-# ─── Pydantic Models ──────────────────────────────────────────────────────────
+class ResponsePolicy(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/api/portal") and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            try:
+                who = await principal(request)
+                if not who.verified:
+                    raise HTTPException(403, "Verify your email first.")
+                rate_limit(request, "publisher-write", str(who.user_id or who.token_id), 30)
+            except HTTPException as error:
+                return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
+        length = request.headers.get("content-length")
+        limit = 8192 if request.url.path.startswith("/api/auth") else 52 * 1024 * 1024
+        if length and (not length.isdigit() or int(length) > limit):
+            return JSONResponse({"detail": "Request exceeds the permitted size."}, status_code=413)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if request.url.path.startswith(("/api/auth", "/api/portal")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
-class PublisherCreate(BaseModel):
-    name: str = Field(..., description="Name of the publisher organization")
-    api_key: str = Field(..., description="Unique API key for the publisher to use for updates")
-    contact_email: Optional[str] = Field(None, description="Contact email for data governance")
 
-class IndicatorConfig(BaseModel):
-    id: str = Field(..., description="Unique indicator ID, e.g. GDP_REAL")
-    name: str = Field(..., description="Human readable name of the indicator")
-    domain: Optional[str] = Field(None, description="Health, Economics, or Agric")
-    unit: Optional[str] = Field(None, description="Unit of measurement")
-    dataset_id: Optional[str] = None
-    excel_url: Optional[str] = None
-    sheet: Optional[str] = None
-    geo_level: Optional[str] = "national"
-    col_map: Optional[dict] = None
-    value_range: Optional[List[float]] = None
+app.add_middleware(ResponsePolicy)
 
-class SourceCreate(BaseModel):
-    publisher_api_key: str
-    source_id: str
-    connector: str
-    transform: str
-    domain: str
-    schedule: str
-    landing_dir: str
-    ingest_mode: str
-    indicators: List[IndicatorConfig]
 
-# ─── Endpoints ────────────────────────────────────────────────────────────────
+class BodyLimit:
+    def __init__(self, app):
+        self.app = app
 
-@app.post("/api/publishers", dependencies=[Depends(require_admin)])
-def create_publisher(pub: PublisherCreate):
-    engine = get_engine()
-    with engine.begin() as conn:
-        try:
-            result = conn.execute(
-                text("""
-                INSERT INTO cdm.publishers (name, api_key, contact_email)
-                VALUES (:name, :api_key, :contact_email)
-                ON CONFLICT (api_key) DO UPDATE SET 
-                    name = EXCLUDED.name,
-                    contact_email = COALESCE(EXCLUDED.contact_email, cdm.publishers.contact_email)
-                RETURNING id;
-                """),
-                {"name": pub.name, "api_key": pub.api_key, "contact_email": pub.contact_email}
-            )
-            pub_id = result.scalar()
-            return {"status": "success", "publisher_id": pub_id}
-        except Exception as e:
-            # We ensure we don't return raw SQL errors to the frontend
-            print(f"Error creating publisher: {e}")
-            raise HTTPException(status_code=400, detail="Could not register organization. Please check your details and try again.")
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = 8192 if scope["path"].startswith("/api/auth") else 52 * 1024 * 1024
+        size = 0
 
-@app.post("/api/sources", dependencies=[Depends(require_admin)])
-def register_source(src: SourceCreate):
-    check_identifier(src.source_id, "source_id")
-    check_identifier(src.landing_dir, "landing_dir")
-    check_code_path(src.connector, "connector")
-    check_code_path(src.transform, "transform")
-    engine = get_engine()
-    with engine.begin() as conn:
-        # Validate publisher
-        pub_result = conn.execute(
-            text("SELECT id FROM cdm.publishers WHERE api_key = :api_key AND is_active = true"),
-            {"api_key": src.publisher_api_key}
-        ).fetchone()
-        
-        if not pub_result:
-            raise HTTPException(status_code=401, detail="Invalid or inactive publisher API key")
-            
-        pub_id = pub_result[0]
-        
-        # Insert source
-        indicators_json = json.dumps([i.model_dump() for i in src.indicators])
-        
-        try:
-            saved = conn.execute(
-                text("""
-                INSERT INTO cdm.data_sources (
-                    publisher_id, source_id, connector, transform, domain, 
-                    schedule, landing_dir, ingest_mode, indicators
-                )
-                VALUES (
-                    :pub_id, :source_id, :connector, :transform, :domain, 
-                    :schedule, :landing_dir, :ingest_mode, :indicators
-                )
-                ON CONFLICT (source_id) DO UPDATE SET
-                    connector = EXCLUDED.connector,
-                    transform = EXCLUDED.transform,
-                    domain = EXCLUDED.domain,
-                    schedule = EXCLUDED.schedule,
-                    landing_dir = EXCLUDED.landing_dir,
-                    ingest_mode = EXCLUDED.ingest_mode,
-                    indicators = EXCLUDED.indicators
-                -- A publisher can update its own source, never someone else's
-                -- or a built-in one (those have no publisher).
-                WHERE cdm.data_sources.publisher_id = EXCLUDED.publisher_id
-                RETURNING source_id;
-                """),
-                {
-                    "pub_id": pub_id,
-                    "source_id": src.source_id,
-                    "connector": src.connector,
-                    "transform": src.transform,
-                    "domain": src.domain,
-                    "schedule": src.schedule,
-                    "landing_dir": src.landing_dir,
-                    "ingest_mode": src.ingest_mode,
-                    "indicators": indicators_json
-                }
-            )
-            if saved.fetchone() is None:
-                raise HTTPException(status_code=409, detail="A source with this id already exists and belongs to someone else.")
-            return {"status": "success", "source_id": src.source_id}
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"Error registering source: {e}")
-            raise HTTPException(status_code=400, detail="Could not configure dataset. Please ensure the details are correct.")
+        async def bounded_receive():
+            nonlocal size
+            message = await receive()
+            size += len(message.get("body", b""))
+            if size > limit:
+                raise HTTPException(413, "Request exceeds the permitted size.")
+            return message
 
-@app.post("/api/upload", dependencies=[Depends(require_admin)])
-async def upload_dataset(
-    file: UploadFile = File(...),
-    source_id: str = Form(...),
-    publisher_api_key: str = Form(...)
-):
-    check_identifier(source_id, "source_id")
-    filename = check_upload_name(file.filename)
+        await self.app(scope, bounded_receive, send)
 
-    engine = get_engine()
-    with engine.begin() as conn:
-        # The file goes to the landing folder of a source this publisher owns.
-        row = conn.execute(
-            text("""
-                SELECT s.landing_dir
-                FROM cdm.data_sources s JOIN cdm.publishers p ON p.id = s.publisher_id
-                WHERE p.api_key = :api_key AND p.is_active = true AND s.source_id = :source_id
-            """),
-            {"api_key": publisher_api_key, "source_id": source_id}
-        ).fetchone()
 
-    if not row:
-        raise HTTPException(status_code=401, detail="Unknown source, or it does not belong to this publisher.")
+app.add_middleware(BodyLimit)
 
-    landing_dir = check_identifier(row[0], "landing_dir")
-    folder = (settings.landing_root / landing_dir).resolve()
-    file_path = (folder / filename).resolve()
-    if folder not in file_path.parents:          # belt and braces against path tricks
-        raise HTTPException(status_code=422, detail="Invalid file name.")
-    folder.mkdir(parents=True, exist_ok=True)
 
-    try:
-        content = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(content) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
-        with open(file_path, "wb") as f:
-            f.write(content)
-        return {"status": "success", "file": filename, "source_id": source_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error uploading dataset: {e}")
-        raise HTTPException(status_code=500, detail="Could not securely save the dataset file. Please try again.")
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, error: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": item["loc"], "msg": item["msg"], "type": item["type"]} for item in error.errors()
+    ]})
 
-@app.get("/api/publishers", dependencies=[Depends(require_admin)])
-def list_publishers():
-    engine = get_engine()
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT name, contact_email, created_at, is_active FROM cdm.publishers ORDER BY created_at DESC"))
-        return [
-            {
-                "name": row[0],
-                "contact_email": row[1],
-                "created_at": row[2].isoformat() if row[2] else None,
-                "is_active": row[3]
-            }
-            for row in result.fetchall()
-        ]
 
-@app.get("/api/sources")
-def list_sources():
-    engine = get_engine()
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT source_id, connector, transform, domain, schedule, ingest_mode, is_active, created_at FROM cdm.data_sources ORDER BY created_at DESC"))
-        return [
-            {
-                "source_id": row[0],
-                "connector": row[1],
-                "transform": row[2],
-                "domain": row[3],
-                "schedule": row[4],
-                "ingest_mode": row[5],
-                "is_active": row[6],
-                "created_at": row[7].isoformat() if row[7] else None
-            }
-            for row in result.fetchall()
-        ]
-
-@app.get("/api/sources/{source_id}/observations")
-def get_source_observations(source_id: str, limit: int = 1000, offset: int = 0):
-    """Observations of one source, newest period first, a page at a time."""
-    limit = max(1, min(limit, 10000))
-    offset = max(0, offset)
-    engine = get_engine()
-    with engine.connect() as conn:
-        result = conn.execute(
-            text("""
-                SELECT indicator_id, indicator_name, geo_level, geo_name, period, value, unit, last_updated_at 
-                FROM cdm.indicator_observation 
-                WHERE source_system = :source_id 
-                ORDER BY period DESC, indicator_id, geo_code
-                LIMIT :limit OFFSET :offset
-            """),
-            {"source_id": source_id, "limit": limit, "offset": offset}
-        )
-        return [
-            {
-                "indicator_id": row[0],
-                "indicator_name": row[1],
-                "geo_level": row[2],
-                "geo_name": row[3],
-                "period": row[4],
-                "value": float(row[5]) if row[5] is not None else None,
-                "unit": row[6],
-                "last_updated_at": row[7].isoformat() if row[7] else None
-            }
-            for row in result.fetchall()
-        ]
+app.include_router(auth.router)
+app.include_router(organisations.router)
+app.include_router(datasets.router)
+app.include_router(datasets.public_router)
+app.include_router(legacy.router)
 
 @app.get("/api/status")
 def data_status():
@@ -340,5 +148,5 @@ def data_status():
 
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok"}

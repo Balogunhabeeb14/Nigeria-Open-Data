@@ -208,7 +208,7 @@ To put it on the internet with HTTPS on your own domain, see [docs/DEPLOY.md](do
 
 The pipeline and the website are identical in both. The built-in catalogue answers the same API routes as CKAN (`/api/3/action/package_search`, `package_show`, `group_list`, `organization_list`, `datastore_search`, and `/datastore/dump/<id>` for CSV), so moving between them is a setting, not a rewrite.
 
-Only the website's port is published in the lite set-up. The pipeline API stays inside the container because its write endpoints are not yet access-controlled; the website proxies the read-only routes.
+Only the website's port is published in the lite set-up. The website proxies the pipeline API; publisher writes require an authenticated session or a scoped integration token.
 
 ---
 
@@ -219,6 +219,10 @@ Only the website's port is published in the lite set-up. The pipeline API stays 
 ```bash
 cp .env.example .env      # then set CKAN_API_KEY and the passwords
 ```
+
+If you change database credentials, update `PIPELINE_DB_URL` for local use and
+`PIPELINE_CONTAINER_DB_URL` for Docker. Existing volumes retain their original passwords.
+Mage uses the Python-based image in `docker/mage.Dockerfile`; its UI is available at http://localhost:6789.
 
 ### 2. Run with Docker
 
@@ -264,12 +268,13 @@ Put a CSV or Excel file in `data/raw/<landing_dir>/`. The file watcher picks it 
 
 ```bash
 pip install -r pipeline/requirements.txt pytest
-docker run -d -p 5433:5432 -e POSTGRES_USER=pipeline -e POSTGRES_PASSWORD=pipeline \
-    -e POSTGRES_DB=pipeline postgres:15-alpine
+docker run -d -p 127.0.0.1:55434:5432 -e POSTGRES_USER=pipeline -e POSTGRES_PASSWORD=pipeline \
+    -e POSTGRES_DB=portal_test postgres:15-alpine
+export NOD_TEST_DATABASE_URL=postgresql://pipeline:pipeline@localhost:55434/portal_test
 python -m pytest pipeline/tests -q
 ```
 
-Sources and CKAN are faked, so no network is needed. Tests that need Postgres are skipped if it is not reachable.
+Sources and CKAN are faked, so no network is needed. Tests that need Postgres require the dedicated disposable database above and are skipped when `NOD_TEST_DATABASE_URL` is unset.
 
 ---
 

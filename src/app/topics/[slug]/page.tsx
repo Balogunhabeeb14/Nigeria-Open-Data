@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download, ChevronLeft, Database } from "lucide-react";
-import { fetchDatasets, fetchGroups } from "@/lib/ckan";
+import { fetchDatasets } from "@/lib/ckan";
 import DownloadButton from "@/components/DownloadButton";
 
 import type { Metadata } from "next";

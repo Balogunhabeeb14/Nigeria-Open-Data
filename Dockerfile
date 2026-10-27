@@ -21,10 +21,10 @@ LABEL description="Naija Open Data — Unified App Portal"
 
 # Install System Dependencies (Postgres client, etc)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-        libpq-dev \
-        gcc \
-        supervisor \
+    curl \
+    libpq-dev \
+    gcc \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Node.js from the frontend-builder stage so we don't have to download it via slow apt mirrors!
