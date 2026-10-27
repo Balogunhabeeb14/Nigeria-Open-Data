@@ -19,6 +19,8 @@ from pipeline.settings import settings
 
 logger = logging.getLogger(__name__)
 
+USER_AGENT = "NaijaOpenData-pipeline/1.0 (+https://github.com/Balogunhabeeb14/Nigeria-Open-Data)"
+
 
 class BaseConnector(ABC):
     """Abstract connector. Subclass this for each data source.
@@ -60,6 +62,21 @@ class BaseConnector(ABC):
         Returns:
             Raw DataFrame (column names are source-specific; the transform handles mapping).
         """
+
+    def expand_indicators(self) -> list[dict]:
+        """Return the indicator configs this run should process.
+
+        The default is the list stored with the source. Connectors that can
+        ask the source what it offers (see WorldBankConnector) override this
+        to add everything they discover, so coverage grows without anyone
+        editing a list by hand.
+        """
+        return list(self.config.get("indicators", []))
+
+    @property
+    def options(self) -> dict:
+        """Per-source settings from cdm.data_sources.options."""
+        return self.config.get("options") or {}
 
     # ── Shared utilities ──────────────────────────────────────────────────────
 

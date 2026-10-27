@@ -72,6 +72,17 @@ def build_deployments() -> list:
     from pipeline.flows.portal_dispatcher import portal_dispatcher
     deployments.append(ingest_flow.to_deployment(name="publisher-job", tags=["publisher", "ingestion"]))
     deployments.append(portal_dispatcher.to_deployment(name="publisher-dispatcher", cron="* * * * *", tags=["publisher", "outbox"]))
+    # Catalogue harvest from other CKAN portals (HDX, openAFRICA, EnergyData)
+    from pipeline.flows.harvest_flow import harvest_flow
+
+    deployments.append(harvest_flow.to_deployment(
+        name="catalogue-harvest",
+        cron="0 5 * * 6",   # Saturdays @ 05:00 UTC
+        description="Lists Nigeria datasets from other open data portals in the catalogue.",
+        tags=["nigeria", "harvest"],
+    ))
+    logger.info("Registered deployment: catalogue-harvest (weekly)")
+
     return deployments
 
 
@@ -96,7 +107,7 @@ def validate_registry() -> bool:
 
 
 def main() -> None:
-    logger.info("=== Nigeria Open Data Pipeline — Deploying Flows ===")
+    logger.info("=== Naija Open Data Pipeline — Deploying Flows ===")
     logger.info("Settings: %s", settings)
 
     # Validate all connectors/transforms are importable before deploying

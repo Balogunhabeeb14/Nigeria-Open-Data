@@ -70,11 +70,56 @@ def get_watermark(source_system: str, source_key: str) -> str | None:
     with get_engine().connect() as conn:
         row = conn.execute(sql, {"source": source_system, "key": source_key}).fetchone()
     watermark = row[0] if row else None
+    if watermark and str(watermark).startswith("hash:"):
+        # Legacy rows stored the file hash here. A hash is not a period.
+        watermark = None
     logger.info(
         "Watermark [%s/%s]: %s",
         source_system, source_key, watermark or "none → full load",
     )
     return watermark
+
+
+def get_manifest(source_system: str, source_key: str) -> dict | None:
+    """Return the manifest row for (source, key) as a dict, or None if never run.
+
+    Keys: last_period, content_hash, publish_state, status, row_count.
+    """
+    sql = text("""
+        SELECT last_period, content_hash, publish_state, status, row_count
+        FROM   cdm.ingest_manifest
+        WHERE  source_system = :source
+          AND  source_key    = :key
+    """)
+    with get_engine().connect() as conn:
+        row = conn.execute(sql, {"source": source_system, "key": source_key}).fetchone()
+    if not row:
+        return None
+    return {
+        "last_period":   row[0],
+        "content_hash":  row[1],
+        "publish_state": row[2],
+        "status":        row[3],
+        "row_count":     row[4],
+    }
+
+
+def get_manifest_hashes(source_system: str) -> dict[str, str]:
+    """Return {source_key: content_hash} for every successful row of a source.
+
+    One query instead of one per key. Used by the catalogue harvester, which
+    checks hundreds of remote datasets per run.
+    """
+    sql = text("""
+        SELECT source_key, content_hash
+        FROM   cdm.ingest_manifest
+        WHERE  source_system = :source
+          AND  status        = 'success'
+          AND  content_hash IS NOT NULL
+    """)
+    with get_engine().connect() as conn:
+        rows = conn.execute(sql, {"source": source_system}).fetchall()
+    return {r[0]: r[1] for r in rows}
 
 
 def update_manifest(
@@ -84,37 +129,51 @@ def update_manifest(
     row_count: int,
     status: str = "success",
     error_message: str | None = None,
+    content_hash: str | None = None,
+    publish_state: str | None = None,
 ) -> None:
     """Upsert the manifest row for (source, key) after each run.
 
-    Uses ON CONFLICT so this is always a single SQL statement regardless
-    of whether the row already exists.
+    A failed run never erases what the last good run recorded: last_period,
+    content_hash and publish_state keep their previous values unless this
+    call supplies new ones. That keeps "what did we last load" answerable
+    after a failure, and keeps the next run incremental.
     """
     sql = text("""
         INSERT INTO cdm.ingest_manifest
-            (source_system, source_key, last_ingested, last_period, row_count, status, error_message)
+            (source_system, source_key, last_ingested, last_period, row_count,
+             status, error_message, content_hash, publish_state, published_at)
         VALUES
-            (:source, :key, NOW(), :period, :count, :status, :error)
+            (:source, :key, NOW(), :period, :count,
+             :status, :error, :content_hash, :publish_state,
+             CASE WHEN :publish_state = 'published' THEN NOW() END)
         ON CONFLICT (source_system, source_key)
         DO UPDATE SET
             last_ingested  = EXCLUDED.last_ingested,
             last_period    = COALESCE(CASE WHEN EXCLUDED.status = 'success' THEN EXCLUDED.last_period END, cdm.ingest_manifest.last_period),
-            row_count      = EXCLUDED.row_count,
+            row_count      = CASE WHEN EXCLUDED.status = 'success'
+                                  THEN EXCLUDED.row_count
+                                  ELSE cdm.ingest_manifest.row_count END,
             status         = EXCLUDED.status,
-            error_message  = EXCLUDED.error_message
+            error_message  = EXCLUDED.error_message,
+            content_hash   = COALESCE(EXCLUDED.content_hash,  cdm.ingest_manifest.content_hash),
+            publish_state  = COALESCE(EXCLUDED.publish_state, cdm.ingest_manifest.publish_state),
+            published_at   = COALESCE(EXCLUDED.published_at,  cdm.ingest_manifest.published_at)
     """)
     with get_engine().begin() as conn:
         conn.execute(sql, {
-            "source": source_system,
-            "key":    source_key,
-            "period": last_period,
-            "count":  row_count,
-            "status": status,
-            "error":  error_message,
+            "source":        source_system,
+            "key":           source_key,
+            "period":        last_period,
+            "count":         row_count,
+            "status":        status,
+            "error":         error_message,
+            "content_hash":  content_hash,
+            "publish_state": publish_state,
         })
     logger.info(
-        "Manifest updated [%s/%s]: status=%s period=%s rows=%d",
-        source_system, source_key, status, last_period, row_count,
+        "Manifest updated [%s/%s]: status=%s period=%s rows=%d publish=%s",
+        source_system, source_key, status, last_period, row_count, publish_state,
     )
 
 
@@ -197,6 +256,35 @@ def upsert_to_cdm(cdm_records: list[CDMRecord]) -> int:
 
     logger.info("Upserted %d CDM rows", len(rows))
     return len(rows)
+
+
+# ── CDM read (used by the CKAN publisher) ────────────────────────────────────
+
+def fetch_observations(source_system: str, indicator_id: str) -> list[dict]:
+    """Return every stored observation for one indicator, oldest first.
+
+    The publisher sends this full table to CKAN, so what users download is
+    the whole series and not only the rows that changed in the latest run.
+    """
+    sql = text("""
+        SELECT period, period_type, geo_level, geo_code, geo_name,
+               value, unit, indicator_id, indicator_name, source_system,
+               raw_source_url, last_updated_at
+        FROM   cdm.indicator_observation
+        WHERE  source_system = :source
+          AND  indicator_id  = :indicator
+        ORDER  BY geo_code NULLS FIRST, period
+    """)
+    with get_engine().connect() as conn:
+        rows = conn.execute(sql, {"source": source_system, "indicator": indicator_id}).mappings().all()
+    out: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        d["value"] = float(d["value"]) if d["value"] is not None else None
+        d["geo_code"] = d["geo_code"] or ""
+        d["last_updated_at"] = d["last_updated_at"].isoformat() if d["last_updated_at"] else None
+        out.append(d)
+    return out
 
 
 # ── Document Registration ─────────────────────────────────────────────────────

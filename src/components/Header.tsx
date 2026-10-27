@@ -62,7 +62,7 @@ export default function Header() {
           <div className="flex items-center gap-2">
             <Database className="h-6 w-6 text-primary-600" />
             <Link href="/" className="text-xl font-bold text-slate-900 tracking-tight">
-              Nigeria Open Data
+              Naija Open Data
             </Link>
           </div>
           

@@ -1,6 +1,12 @@
 """Only explicitly named, loopback, disposable test databases are allowed."""
 import json
 import os
+import tempfile
+
+# Never inherit application credentials or landing files from the local .env.
+os.environ["CKAN_API_KEY"] = ""
+os.environ["PIPELINE_DB_URL"] = os.environ.get("NOD_TEST_DATABASE_URL", "postgresql://pipeline:pipeline@localhost:55434/portal_test")
+os.environ["LANDING_ROOT"] = tempfile.mkdtemp(prefix="nod-test-landing-")
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -28,12 +34,22 @@ def guarded_url():
     return value
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "integration: needs isolated PostgreSQL")
+
+
 @pytest.fixture(scope="session")
 def database():
     engine = create_engine(guarded_url())
+    patch = pytest.MonkeyPatch()
+    patch.setattr(warehouse, "get_engine", lambda: engine)
+    patch.setattr(store, "engine", lambda: engine)
     migrate(engine)
-    yield engine
-    engine.dispose()
+    try:
+        yield engine
+    finally:
+        patch.undo()
+        engine.dispose()
 
 
 @pytest.fixture
@@ -92,3 +108,34 @@ def metadata(organisation):
 
 def upload(client, organisation, key="fixture-key-001", data=b"state,value\nLagos,12\nKano,15\n", filename="table.csv"):
     return client.post("/api/portal/datasets/upload", headers={"Idempotency-Key": key}, data={"metadata": json.dumps(metadata(organisation))}, files={"file": (filename, data)})
+
+
+@pytest.fixture
+def clean_db(database):
+    with database.begin() as conn:
+        conn.execute(text("TRUNCATE cdm.indicator_observation, cdm.stage_raw_observations, cdm.ingest_manifest, cdm.pipeline_run_log RESTART IDENTITY"))
+        conn.execute(text("DROP TABLE IF EXISTS cdm.file_watcher_manifest"))
+    yield
+
+
+@pytest.fixture(scope="session")
+def prefect_harness():
+    """Run flows against a temporary Prefect database, not a real server."""
+    from prefect.testing.utilities import prefect_test_harness
+    with prefect_test_harness():
+        yield
+
+
+@pytest.fixture
+def fake_ckan(monkeypatch):
+    """A CKAN stand-in wired into the publisher, with publishing switched on."""
+    from pydantic import SecretStr
+
+    from pipeline import publisher
+    from pipeline.settings import settings
+    from pipeline.tests.fakes import FakeCKAN
+
+    ckan = FakeCKAN()
+    monkeypatch.setattr(settings, "ckan_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(publisher, "_get_ckan_client", lambda: ckan)
+    return ckan

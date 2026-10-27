@@ -1,9 +1,13 @@
+# Keep the build context small and never ship local state into the image.
 .git
-.env
-.env.*
-.venv
 node_modules
 .next
+.run-logs
 data
-__pycache__
+datapipeline
+**/__pycache__
 *.pyc
+.env
+.env.*
+!.env.example
+.venv

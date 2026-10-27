@@ -1,0 +1,216 @@
+# Checks the platform against the real world, which unit tests cannot do:
+#
+#   sources  every configured source is asked for real data and the answers
+#            are reported (wrong codes, moved files, portals that refuse us)
+#   stack    the two-container app is built and started, loads real data,
+#            and its pages, data API and CSV download are fetched
+#
+# Runs weekly, on demand (Actions → Live check → Run workflow), and when the
+# pieces it covers change.
+name: Live check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 6 * * 1'   # Mondays 06:30 UTC
+  push:
+    paths:
+      - 'scripts/verify_live.py'
+      - 'docker-compose.lite.yml'
+      - 'docker-compose.prod.yml'
+      - 'docker-compose.codespaces.yml'
+      - 'deploy/**'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'pipeline/supervisord.local.conf'
+      - 'pipeline/bootstrap.py'
+      - 'pipeline/db/seed_sources.py'
+      - 'pipeline/harvest/portals.py'
+      - 'pipeline/connectors/**'
+      - '.github/workflows/live-check.yml'
+
+jobs:
+  sources:
+    name: Sources answer with real data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'pipeline/requirements.txt'
+      - run: pip install -r pipeline/requirements.txt "setuptools<81"
+      - name: Ask every source
+        run: |
+          set -o pipefail
+          python scripts/verify_live.py | tee report.txt
+          python scripts/verify_live.py --markdown >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Put the report on the run page
+        if: always()
+        # As an annotation, the report is readable from the run's summary
+        # page and through the API without opening the log.
+        run: |
+          [ -f report.txt ] || exit 0
+          echo "::notice title=Source check::$(sed 's/%/%25/g' report.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+
+  stack:
+    name: App starts and serves real data
+    runs-on: ubuntu-latest
+    env:
+      BOOTSTRAP_FULL: 'false'      # featured indicators + harvest; not the 1,500-series run
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml up --build -d
+      - name: Wait for real datasets to appear
+        run: |
+          for i in $(seq 1 60); do
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo 0)
+            echo "t+$((i*10))s: $count datasets"
+            if [ "$count" -ge 15 ]; then break; fi
+            sleep 10
+          done
+          [ "$count" -ge 15 ] || { echo "Fewer than 15 datasets after 10 minutes"; exit 1; }
+      - name: Let the harvest step run
+        run: sleep 150
+      - name: What users would get
+        run: |
+          set -e
+          api="http://localhost:3000/api/3/action"
+          {
+            echo "### Running app, real data"
+            echo
+            echo '```'
+            echo "Datasets: $(curl -sf "$api/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])")"
+            echo "Publishers:"; curl -sf "$api/organization_list?all_fields=true" | python3 -c "import json,sys; [print('  ', o['title'], o['package_count']) for o in json.load(sys.stdin)['result']]"
+            echo "Topics:"; curl -sf "$api/group_list?all_fields=true" | python3 -c "import json,sys; [print('  ', o['title'], o['package_count']) for o in json.load(sys.stdin)['result']]"
+            echo "Population CSV (first rows):"; rid=$(curl -sf "$api/package_show?id=ng-wb-sp-pop-totl" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['resources'][0]['id'])")
+            curl -sf "http://localhost:3000/datastore/dump/$rid" | head -4 | cut -c1-90
+            echo "Latest rows via the data API:"; curl -sf "$api/datastore_search?resource_id=$rid&limit=500" | python3 -c "import json,sys; r=json.load(sys.stdin)['result']['records']; [print('  ', x['period'], x['value']) for x in r[-3:]]"
+            echo "State debt (DMO), newest quarter, five largest:"
+            rid=$(curl -sf "$api/package_show?id=ng-dmo-state-domestic-debt" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['resources'][0]['id'])" 2>/dev/null || true)
+            if [ -n "$rid" ]; then
+              curl -sf "$api/datastore_search?resource_id=$rid&limit=32000" | python3 -c "
+          import json, sys
+          r = json.load(sys.stdin)['result']['records']
+          periods = sorted({x['period'] for x in r})
+          latest = [x for x in r if x['period'] == periods[-1]]
+          print('  ', len(r), 'rows;', len(periods), 'quarters', periods[0], 'to', periods[-1], ';', len(latest), 'places in the newest')
+          [print('  ', x['geo_name'], format(x['value'], ',.2f')) for x in sorted(latest, key=lambda x: -x['value'])[:5]]"
+              echo "   quarters loaded: $(docker compose -f docker-compose.lite.yml exec -T db psql -U pipeline -Atc "SELECT string_agg(period, ' ' ORDER BY period) FROM (SELECT DISTINCT period FROM cdm.indicator_observation WHERE indicator_id = 'DMO_STATE_DOMESTIC_DEBT') q")"
+              echo "   total series, last 3: $(docker compose -f docker-compose.lite.yml exec -T db psql -U pipeline -Atc "SELECT string_agg(period || '=' || value, '  ' ORDER BY period) FROM (SELECT period, value FROM cdm.indicator_observation WHERE indicator_id = 'DMO_STATES_DOMESTIC_DEBT_TOTAL' ORDER BY period DESC LIMIT 3) q")"
+            else
+              echo "   not loaded"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY" | tee stack.txt
+          echo "::notice title=Running app::$(sed 's/%/%25/g' stack.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+          for path in / /datasets /topics /publishers /datasets/ng-wb-sp-pop-totl "/datasets?q=population"; do
+            code=$(curl -s -o /tmp/page.html -w '%{http_code}' "http://localhost:3000$path")
+            echo "$code $path ($(wc -c </tmp/page.html) bytes)"
+            [ "$code" = "200" ]
+          done
+          grep -q "Population, total" /tmp/page.html
+          curl -s "http://localhost:3000/datasets/ng-wb-sp-pop-totl" | grep -q "All values"
+          echo "Port 8000 must not be reachable from outside the container:"
+          if curl -s -m 5 -o /dev/null http://localhost:8000/health; then echo "EXPOSED"; exit 1; else echo "not exposed (good)"; fi
+          echo "Admin endpoints are off by default, even from inside:"
+          code=$(docker compose -f docker-compose.lite.yml exec -T app curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/scrape/batch)
+          echo "POST /scrape/batch -> $code"; [ "$code" = "503" ]
+      - name: Public front door (reverse proxy) works
+        env:
+          SITE_ADDRESS: ':80'
+        run: |
+          docker compose -f docker-compose.lite.yml -f docker-compose.prod.yml up -d caddy
+          sleep 5
+          for path in / /status /datasets/ng-wb-sp-pop-totl "/api/3/action/package_search?rows=1"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost$path")
+            echo "$code via proxy $path"; [ "$code" = "200" ]
+          done
+          curl -sI -H "Accept-Encoding: gzip" http://localhost/datasets | grep -i -E "content-encoding|x-content-type-options"
+      - name: Loader and server logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.lite.yml logs --no-color app > app.log 2>&1 || true
+          grep -v "✅\|── \[\|Fetching\|Fetched\|Staged\|Upserted\|Transformed\|Quality Report\|PASS |" app.log | tail -150
+          # Problems and the loader's own summary lines, as an annotation.
+          grep -E "WARNING|ERROR|Traceback|Step [0-9]|featured:|Harvest |full:|Load finished" app.log | grep -v griffe | cut -c1-330 | tail -40 > loader.txt || true
+          [ -s loader.txt ] && echo "::notice title=Loader log::$(sed 's/%/%25/g' loader.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
+
+  hostnet:
+    # The variant for GitHub Codespaces, where the two containers share the
+    # machine's network instead of Docker's own.
+    name: App starts on the machine's network (Codespaces set-up)
+    runs-on: ubuntu-latest
+    env:
+      BOOTSTRAP_FULL: 'false'
+      BOOTSTRAP_HARVEST: 'false'
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml up --build -d
+      - name: Wait for real datasets to appear
+        run: |
+          for i in $(seq 1 60); do
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo 0)
+            echo "t+$((i*10))s: $count datasets"
+            if [ "$count" -ge 5 ]; then break; fi
+            sleep 10
+          done
+          home=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/)
+          echo "::notice title=Codespaces set-up::datasets=$count home page=$home"
+          [ "$count" -ge 5 ] && [ "$home" = "200" ]
+      - name: Report the start-up log
+        if: always()
+        run: |
+          docker compose -f docker-compose.lite.yml -f docker-compose.codespaces.yml logs --no-color app 2>&1 | head -25 | cut -c1-200 > start.txt || true
+          [ -s start.txt ] && echo "::notice title=Codespaces start-up log::$(sed 's/%/%25/g' start.txt | sed ':a;N;$!ba;s/\n/%0A/g')" || true
+
+  full:
+    # The long one: every World Bank indicator, to find series that break the
+    # pipeline (odd values, timeouts) before users do. Run it on demand, or
+    # by putting [full-check] in a commit message.
+    name: Full World Bank catalogue loads
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[full-check]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BOOTSTRAP_FULL: 'true'
+      BOOTSTRAP_HARVEST: 'false'
+      REFRESH_HOURS: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose -f docker-compose.lite.yml up --build -d
+      - name: Wait for the full load to finish
+        run: |
+          start=$(date +%s)
+          for i in $(seq 1 110); do
+            if docker compose -f docker-compose.lite.yml logs --no-color app 2>/dev/null | grep -q "Load finished"; then break; fi
+            count=$(curl -sf "http://localhost:3000/api/3/action/package_search?rows=0" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null || echo "?")
+            echo "t+${i}min: $count datasets"
+            sleep 60
+          done
+          echo "ELAPSED_MIN=$(( ($(date +%s) - start) / 60 ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          compose="docker compose -f docker-compose.lite.yml"
+          {
+            echo "Full World Bank load: ${ELAPSED_MIN:-?} minutes"
+            $compose logs --no-color app | grep -E "featured:|full:|Load finished|Stopping this run" | cut -c1-240
+            echo "Status:"
+            $compose exec -T app curl -s localhost:8000/api/status | python3 -c "import json,sys; d=json.load(sys.stdin); print('  totals', d['totals']); [print('  ', s['id'], {k: s[k] for k in ('datasets','checked_without_data','failed','awaiting_publication','observations')}) for s in d['sources']]"
+            echo "Datasets on the site: $(curl -sf 'http://localhost:3000/api/3/action/package_search?rows=0' | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['count'])")"
+            echo "Largest value stored:"; $compose exec -T db psql -U pipeline -Atc "SELECT indicator_id || ' ' || period || ' ' || value FROM cdm.indicator_observation ORDER BY value DESC NULLS LAST LIMIT 2"
+            echo "Failures (first 25):"
+            $compose exec -T db psql -U pipeline -Atc "SELECT source_key || ': ' || left(coalesce(error_message, ''), 160) FROM cdm.ingest_manifest WHERE status = 'failed' ORDER BY source_key LIMIT 25"
+            echo "Failure kinds:"
+            $compose exec -T db psql -U pipeline -Atc "SELECT count(*) || ' x ' || left(coalesce(error_message, ''), 80) FROM cdm.ingest_manifest WHERE status = 'failed' GROUP BY left(coalesce(error_message, ''), 80) ORDER BY count(*) DESC LIMIT 8"
+          } 2>&1 | tee full.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Full load::$(sed 's/%/%25/g' full.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+          curl -s -o /dev/null -w "search 'gdp' page: %{http_code} in %{time_total}s\n" "http://localhost:3000/datasets?q=gdp"
+          curl -s -o /dev/null -w "datasets page 40: %{http_code} in %{time_total}s\n" "http://localhost:3000/datasets?page=40"

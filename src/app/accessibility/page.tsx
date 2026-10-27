@@ -15,7 +15,7 @@ export default function AccessibilityPage() {
         </div>
         <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">Accessibility Statement</h1>
         <p className="text-lg text-slate-600 leading-relaxed">
-          Nigeria Open Data is dedicated to ensuring that digital access to public resources remains accessible to all citizens, including individuals with disabilities.
+          Naija Open Data is dedicated to ensuring that digital access to public resources remains accessible to all citizens, including individuals with disabilities.
         </p>
       </div>
 

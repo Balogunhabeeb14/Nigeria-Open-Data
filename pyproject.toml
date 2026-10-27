@@ -1,12 +1,12 @@
 [project]
 name = "naija-open-data-pipeline"
 version = "1.0.0"
-description = "Production ingestion pipeline for the Nigeria Open Data platform"
-readme = "pipeline/README.md"
+description = "Production ingestion pipeline for the Naija Open Data platform"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Nigeria Open Data Team", email = "support@nigeriaopendata.gov.ng" }
+    { name = "Naija Open Data Team", email = "support@nigeriaopendata.gov.ng" }
 ]
 keywords = ["nigeria", "open-data", "data-pipeline", "etl", "prefect"]
 
@@ -16,7 +16,7 @@ dependencies = [
     "requests>=2.31.0",
     "python-dotenv>=1.0.1",
     "prefect>=3.0.0",
-    "sqlalchemy>=2.0.36",
+    "sqlalchemy>=2.0.36,<2.1",   # 2.1 switches the default Postgres driver to psycopg 3
     "psycopg2-binary>=2.9.10",
     "openpyxl>=3.1.5",
     "lxml>=5.3.0",
@@ -47,6 +47,7 @@ dev = [
 # Run from CLI: naija-ingest CBN --start-period 2020
 naija-ingest  = "pipeline.flows.ingest_flow:main"
 naija-deploy  = "pipeline.deploy:main"
+naija-harvest = "pipeline.flows.harvest_flow:main"
 naija-watch   = "pipeline.flows.file_watcher_flow:file_watcher_flow"
 
 [tool.ruff]

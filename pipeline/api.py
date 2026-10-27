@@ -13,6 +13,12 @@ app = FastAPI(title="Nigeria Open Data - Publisher API", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=[settings.frontend_url.rstrip("/")], allow_credentials=True,
                    allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "X-CSRF-Token", "Idempotency-Key", "Authorization"])
 
+from sqlalchemy import text
+from pipeline.db.warehouse import get_engine
+
+if settings.catalog_backend == "local":
+    from pipeline.catalog.api import router as catalog_router
+    app.include_router(catalog_router)
 
 class ResponsePolicy(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -75,6 +81,70 @@ app.include_router(organisations.router)
 app.include_router(datasets.router)
 app.include_router(datasets.public_router)
 app.include_router(legacy.router)
+
+@app.get("/api/status")
+def data_status():
+    """How fresh and complete the data is, per source. Public and read-only.
+
+    Built from the pipeline's own records of what it loaded and when, so it
+    describes what actually happened, not what was scheduled.
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        loaded = conn.execute(text("""
+            SELECT source_system,
+                   count(*) FILTER (WHERE status = 'success' AND COALESCE(row_count, 0) > 0) AS with_data,
+                   count(*) FILTER (WHERE status = 'success' AND COALESCE(row_count, 0) = 0) AS no_data,
+                   count(*) FILTER (WHERE status = 'failed')                                AS failed,
+                   count(*) FILTER (WHERE publish_state = 'failed')                         AS unpublished,
+                   max(last_ingested) FILTER (WHERE status = 'success')                     AS last_success,
+                   max(last_ingested)                                                       AS last_checked
+            FROM cdm.ingest_manifest
+            GROUP BY source_system
+        """)).mappings().all()
+        observations = dict(conn.execute(text(
+            "SELECT source_system, count(*) FROM cdm.indicator_observation GROUP BY source_system"
+        )).fetchall())
+        names = {
+            row[0]: (row[1] or {}).get("source_name") or row[0]
+            for row in conn.execute(text("SELECT source_id, options FROM cdm.data_sources")).fetchall()
+        }
+
+    from pipeline.harvest.portals import HARVEST_PORTALS
+    portal_titles = {f"harvest:{p['id']}": p["title"] for p in HARVEST_PORTALS}
+
+    def iso(value):
+        return value.isoformat() if value else None
+
+    sources = []
+    for row in loaded:
+        key = row["source_system"]
+        harvested = key.startswith("harvest:")
+        sources.append({
+            "id": key,
+            "name": portal_titles.get(key) or names.get(key) or key,
+            "kind": "listed from another portal" if harvested else "data held here",
+            "datasets": row["with_data"],
+            "checked_without_data": row["no_data"],
+            "failed": row["failed"],
+            "awaiting_publication": row["unpublished"],
+            "observations": observations.get(key, 0),
+            "last_successful_update": iso(row["last_success"]),
+            "last_checked": iso(row["last_checked"]),
+        })
+    sources.sort(key=lambda item: (-item["datasets"], item["name"]))
+
+    stamps = [s["last_successful_update"] for s in sources if s["last_successful_update"]]
+    return {
+        "sources": sources,
+        "totals": {
+            "datasets": sum(s["datasets"] for s in sources),
+            "observations": sum(s["observations"] for s in sources),
+            "sources": len(sources),
+            "failed": sum(s["failed"] for s in sources),
+            "last_successful_update": max(stamps) if stamps else None,
+        },
+    }
 
 
 @app.get("/health")

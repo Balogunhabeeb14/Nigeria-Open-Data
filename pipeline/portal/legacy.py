@@ -151,7 +151,10 @@ def public_sources():
 
 
 @router.get("/api/sources/{source_id}/observations")
-def observations(source_id: str):
+def observations(source_id: str, limit: int = 1000, offset: int = 0):
+    limit = max(1, min(limit, 10000))
+    offset = max(0, offset)
     with store.engine().connect() as conn:
         return store.all_rows(conn, """SELECT indicator_id,indicator_name,geo_level,geo_name,period,value,unit,last_updated_at
-            FROM cdm.indicator_observation WHERE source_system=:s ORDER BY period DESC LIMIT 1000""", s=source_id)
+            FROM cdm.indicator_observation WHERE source_system=:s ORDER BY period DESC,indicator_id,geo_code LIMIT :limit OFFSET :offset""",
+            s=source_id, limit=limit, offset=offset)

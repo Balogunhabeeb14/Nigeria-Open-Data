@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Download, ChevronLeft, Database } from "lucide-react";
-import { fetchDatasets, fetchGroups } from "@/lib/ckan";
+import { fetchDatasets } from "@/lib/ckan";
 import DownloadButton from "@/components/DownloadButton";
 
 import type { Metadata } from "next";
@@ -58,7 +58,7 @@ export default async function TopicDetail({ params }: { params: Promise<{ slug: 
                     <Link href={`/datasets/${dataset.name}`}>{dataset.title || dataset.name}</Link>
                   </h3>
                   <p className="text-sm text-slate-500 font-medium mb-3">
-                    Published by <span className="text-slate-700">{dataset.organization?.title || 'Unknown'}</span> • {new Date(dataset.metadata_modified).toLocaleDateString()}
+                    Published by <span className="text-slate-700">{dataset.organization?.title || 'Unknown'}</span> • {new Date(dataset.metadata_modified).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
                   </p>
                   <p className="text-slate-600 leading-relaxed mb-4">
                     {dataset.notes || "No description provided."}

@@ -12,6 +12,7 @@ def test_repeat_migration_is_noop_and_failure_keeps_watermark(portal):
     warehouse.update_manifest("fixture-source", "fixture-key", "2024", 3)
     warehouse.update_manifest("fixture-source", "fixture-key", None, 0, "failed", "fixture error")
     assert warehouse.get_watermark("fixture-source", "fixture-key") == "2024"
+    assert warehouse.get_manifest("fixture-source", "fixture-key")["row_count"] == 3
 
 
 def test_existing_data_and_tokens_preserved_through_migration(portal):
@@ -24,7 +25,7 @@ def test_existing_data_and_tokens_preserved_through_migration(portal):
         conn.execute(text("INSERT INTO cdm.dataset_registry(source_system,dataset_id,display_name,domain,format,storage_url) VALUES ('OldSource','original-dataset-id','Original','general','csv','old-location')"))
         conn.execute(text("INSERT INTO cdm.ingest_manifest(source_system,source_key,last_period,row_count) VALUES ('OldSource','key','2020',8)"))
         conn.execute(text("INSERT INTO cdm.indicator_observation(source_system,domain,indicator_id,indicator_name,geo_level,geo_name,period_type,period,value) VALUES ('OldSource','general','original-indicator','Old indicator','country','Nigeria','annual','2020',8)"))
-    assert migrate(portal) == ["0001_baseline", "0002_publisher_portal"]
+    assert migrate(portal) == ["0001_baseline", "0002_publisher_portal", "0003_catalog_and_publish_tracking"]
     with portal.connect() as conn:
         assert conn.execute(text("SELECT id FROM cdm.publishers")).scalar_one() == publisher
         assert conn.execute(text("SELECT dataset_id FROM cdm.dataset_registry")).scalar_one() == "original-dataset-id"
