@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 from pipeline.api import app
 from pipeline.db.migrate import migrate
+from pipeline.db.seed_sources import seed_default_sources as seed_test_sources
 from pipeline.db import warehouse
 from pipeline.portal import mail, store
 from pipeline.portal.security import unseal
@@ -112,6 +113,7 @@ def upload(client, organisation, key="fixture-key-001", data=b"state,value\nLago
 
 @pytest.fixture
 def clean_db(database):
+    seed_test_sources()
     with database.begin() as conn:
         conn.execute(text("TRUNCATE cdm.indicator_observation, cdm.stage_raw_observations, cdm.ingest_manifest, cdm.pipeline_run_log RESTART IDENTITY"))
         conn.execute(text("DROP TABLE IF EXISTS cdm.file_watcher_manifest"))

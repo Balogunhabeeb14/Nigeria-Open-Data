@@ -116,9 +116,9 @@ jobs:
           curl -s "http://localhost:3000/datasets/ng-wb-sp-pop-totl" | grep -q "All values"
           echo "Port 8000 must not be reachable from outside the container:"
           if curl -s -m 5 -o /dev/null http://localhost:8000/health; then echo "EXPOSED"; exit 1; else echo "not exposed (good)"; fi
-          echo "Admin endpoints are off by default, even from inside:"
+          echo "Unauthenticated ingestion requests are rejected, even from inside:"
           code=$(docker compose -f docker-compose.lite.yml exec -T app curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/scrape/batch)
-          echo "POST /scrape/batch -> $code"; [ "$code" = "503" ]
+          echo "POST /scrape/batch -> $code"; [ "$code" = "401" ]
       - name: Public front door (reverse proxy) works
         env:
           SITE_ADDRESS: ':80'

@@ -44,7 +44,9 @@ def test_csrf_origin_and_validation_do_not_leak_credentials(client, owner):
     assert client.post("/api/auth/login", content=b" " * 9000, headers={"Content-Type": "application/json"}).status_code == 413
 
 
-def test_login_rate_limit(client):
+def test_login_rate_limit(client, monkeypatch):
+    # Keep all attempts in one five-minute bucket, even on slow CI runners.
+    monkeypatch.setattr("pipeline.portal.security.time.time", lambda: 1_700_000_000)
     for _ in range(10):
         assert client.post("/api/auth/login", json={"email": "absent@example.org", "password": "bad"}).status_code == 401
     assert client.post("/api/auth/login", json={"email": "absent@example.org", "password": "bad"}).status_code == 429

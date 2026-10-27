@@ -22,7 +22,8 @@ beautifulsoup4==4.12.3
 PyPDF2==3.0.1
 pdfplumber==0.11.0
 # ── API / Dynamic configuration ────────────────────────────────────────────────
-fastapi
+# Prefect 3.0 uses Body(min_items=...), removed by newer FastAPI releases.
+fastapi==0.115.14
 uvicorn
 python-multipart
 argon2-cffi==23.1.0
