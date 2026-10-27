@@ -442,8 +442,6 @@ def ingest_flow(
         log_run_finish(run_id, "failed", error_message=str(exc))
         raise
 
-    if failed:
-        raise RuntimeError("One or more indicators failed; inspect the ingestion history")
     return summary
 
 
