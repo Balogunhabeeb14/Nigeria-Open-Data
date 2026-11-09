@@ -55,6 +55,10 @@ class CBNConnector(BaseConnector):
         # flow can decide whether to skip.  We store it in dataset_config.
         dataset_config["_file_hash"] = new_hash
         dataset_config["_local_path"] = str(local_path)
+        if since and since.startswith("hash:"):
+            if since == f"hash:{new_hash}":
+                return pd.DataFrame()
+            since = None  # Changed files are fully upserted, including revised historical values.
 
         # ── Step 3: parse the workbook ────────────────────────────────────────
         logger.info("Parsing CBN Excel: %s (sheet=%s)", local_path.name, sheet_name)

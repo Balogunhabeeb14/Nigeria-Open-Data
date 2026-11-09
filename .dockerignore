@@ -10,3 +10,4 @@ datapipeline
 .env
 .env.*
 !.env.example
+.venv

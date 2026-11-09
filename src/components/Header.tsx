@@ -51,6 +51,7 @@ export default function Header() {
     { href: "/topics", label: "Topics" },
     { href: "/publishers", label: "Publishers" },
     { href: "/about", label: "About" },
+    { href: "/publisher", label: "Publisher dashboard" },
   ];
 
   return (

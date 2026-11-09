@@ -5,6 +5,12 @@ const PIPELINE = process.env.PIPELINE_INTERNAL_URL || "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  async headers() {
+    return ["/account", "/publisher"].map(source => ({ source, headers: [
+      { key: "Cache-Control", value: "no-store" },
+      { key: "Referrer-Policy", value: "no-referrer" },
+    ] }));
+  },
   // Development server only: hosts other than localhost that may load the
   // site (the loopback address, and GitHub Codespaces' forwarded ports).
   // Without this the dev server refuses them its scripts and pages stop
@@ -19,7 +25,7 @@ const nextConfig: NextConfig = {
       // links work wherever the site is opened from. With CKAN as the
       // backend, resource links point at CKAN and these are simply unused.
       { source: "/datastore/:path*", destination: `${PIPELINE}/datastore/:path*` },
-      { source: "/api/3/:path*", destination: `${PIPELINE}/api/3/:path*` },
+      { source: "/api/:path*", destination: `${PIPELINE}/api/:path*` },
     ];
   },
 };

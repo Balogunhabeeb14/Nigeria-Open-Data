@@ -247,6 +247,7 @@ def _publish_safely(source_id: str, indicator_config: dict, source_options: dict
 def ingest_flow(
     source_id: str,
     start_period: str | None = None,
+    job_id: str | None = None,
     featured_only: bool = False,
 ) -> dict:
     """Run the full ingestion pipeline for all indicators of a registered source.
@@ -264,6 +265,13 @@ def ingest_flow(
         Summary dict: {indicator_id: {status, rows, ...}} per indicator.
         status is 'success', 'unchanged', 'skipped' (no data) or 'failed'.
     """
+    if job_id:
+        from pipeline.portal.processing import process_job
+        result = process_job(source_id, job_id)
+        if result.get("status") == "failed":
+            raise RuntimeError(f"Publisher job failed: {result['error_code']}. See the dashboard.")
+        return result
+
     from pipeline.db.warehouse import (
         get_manifest,
         log_run_finish,

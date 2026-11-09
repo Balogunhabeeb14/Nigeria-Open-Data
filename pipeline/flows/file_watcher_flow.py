@@ -82,12 +82,18 @@ def scan_landing_zone() -> list[dict]:
 
         for source_id in list_source_ids():
             source_cfg = get_source_config(source_id)
+            if source_cfg.get("ingest_mode") == "publisher":
+                continue  # Publisher files are processed only by authorised outbox jobs.
             folder     = settings.landing_root / source_cfg["landing_dir"]
+            if not folder.resolve().is_relative_to(settings.landing_root.resolve()):
+                continue
 
             if not folder.exists():
                 continue
 
             for file_path in sorted(folder.iterdir()):
+                if not file_path.is_file() or file_path.is_symlink():
+                    continue
                 if file_path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
                     continue
 

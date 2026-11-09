@@ -17,6 +17,8 @@ import logging
 import re
 from datetime import UTC, datetime
 
+import pandas as pd
+import requests
 from ckanapi import NotAuthorized, NotFound, RemoteCKAN, ValidationError
 
 from pipeline.settings import settings
@@ -27,6 +29,61 @@ logger = logging.getLogger(__name__)
 PUBLISHED = "published"
 DISABLED = "disabled"     # no CKAN API key configured
 FAILED = "failed"
+
+class CatalogSession(requests.Session):
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", 15)
+        return super().request(*args, **kwargs)
+
+
+def publish_dataset_to_ckan(dataset, files, publisher):
+    """Idempotent publication of actual dataset files, after worker authorisation.
+
+    Exceptions propagate to the job; no success is returned on a catalog failure.
+    """
+    client = _get_ckan_client()
+    if client is None:
+        raise RuntimeError("CKAN publication is not configured")
+    organisation = publisher["ckan_org_name"]
+    if not organisation:
+        raise RuntimeError("An operator must map this existing organisation to CKAN")
+    try:
+        client.action.organization_show(id=organisation)
+    except NotFound:
+        client.action.organization_create(name=organisation, title=publisher["name"])
+    identifier = dataset["dataset_id"]
+    try:
+        package = client.action.package_show(id=identifier)
+        if package.get("owner_org") and client.action.organization_show(id=organisation)["id"] != package["owner_org"]:
+            raise RuntimeError("Catalog organisation does not match")
+    except NotFound:
+        package = client.action.package_create(name=identifier, title=dataset["display_name"], owner_org=organisation, private=True)
+    for file in files:
+        name = f"{file['kind']}-{file['sha256'][:16]}.{file['format']}"
+        url = f"{settings.frontend_url.rstrip('/')}/api/public/datasets/{identifier}/files/{file['id']}"
+        resource = next((item for item in package.get("resources", []) if item.get("name") == name), None)
+        if resource:
+            client.action.resource_patch(id=resource["id"], url=url, format=file["format"].upper())
+        else:
+            client.action.resource_create(package_id=package["id"], name=name, url=url, format=file["format"].upper())
+        package = client.action.package_show(id=identifier)
+    notes = (f"{dataset['description']}\n\nOriginal provider: {dataset['original_provider']}\n"
+             f"Provenance: {dataset['provenance']}\nReuse conditions: {dataset['licence']}")
+    client.action.package_patch(id=package["id"], title=dataset["display_name"], notes=notes, private=False,
+        extras=[{"key": "licence_or_reuse_conditions", "value": dataset["licence"]},
+                {"key": "original_provider", "value": dataset["original_provider"]},
+                {"key": "provenance", "value": dataset["provenance"]},
+                {"key": "submitting_organisation", "value": publisher["name"]},
+                {"key": "source_id", "value": dataset["source_system"]}],
+        tags=[{"name": dataset["domain"]}, {"name": "nigeria"}])
+    # Public visibility must be confirmed by an unauthenticated catalog client.
+    public = RemoteCKAN(settings.ckan_url, session=CatalogSession()).action.package_show(id=identifier)
+    urls = {item.get("url") for item in public.get("resources", [])}
+    expected = {f"{settings.frontend_url.rstrip('/')}/api/public/datasets/{identifier}/files/{file['id']}" for file in files}
+    if public.get("private") is not False or not expected <= urls:
+        raise RuntimeError("Public catalog visibility could not be verified")
+    return public["id"]
+
 
 DATA_RESOURCE_NAME = "Full data table"
 _UPSERT_BATCH = 5000
@@ -119,7 +176,7 @@ def _get_ckan_client():
     if not key:
         logger.warning("CKAN_API_KEY not set — CKAN publishing is disabled.")
         return None
-    return RemoteCKAN(settings.ckan_url, apikey=key)
+    return RemoteCKAN(settings.ckan_url, apikey=key, session=CatalogSession())
 
 
 def slugify(text: str, max_length: int = 100) -> str:

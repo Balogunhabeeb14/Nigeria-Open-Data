@@ -22,28 +22,29 @@ class SourceRegistry:
 
     def get_connector(self, source_id: str) -> BaseConnector:
         """Return an instantiated connector for the given source_id."""
-        if source_id not in self._connector_cache:
-            config = get_source_config(source_id)
+        config = get_source_config(source_id)
+        path = config["connector"]
+        if path not in self._connector_cache:
             cls = self._load_class(config["connector"])
-            self._connector_cache[source_id] = cls
+            self._connector_cache[path] = cls
             logger.debug("Loaded connector for '%s': %s", source_id, config["connector"])
             
-        config = get_source_config(source_id)
         # Pass config to the connector if it accepts it
         try:
-            return self._connector_cache[source_id](config=config)
+            return self._connector_cache[path](config=config)
         except TypeError:
             # Fallback for older connectors that don't take config
-            return self._connector_cache[source_id]()
+            return self._connector_cache[path]()
 
     def get_transform(self, source_id: str) -> Callable:
         """Return the transform() function for the given source_id."""
-        if source_id not in self._transform_cache:
-            config = get_source_config(source_id)
+        config = get_source_config(source_id)
+        path = config["transform"]
+        if path not in self._transform_cache:
             fn = self._load_function(config["transform"])
-            self._transform_cache[source_id] = fn
+            self._transform_cache[path] = fn
             logger.debug("Loaded transform for '%s': %s", source_id, config["transform"])
-        return self._transform_cache[source_id]
+        return self._transform_cache[path]
 
     def get_source(self, source_id: str) -> dict:
         return get_source_config(source_id)

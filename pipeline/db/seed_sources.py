@@ -260,7 +260,8 @@ def seed_default_sources() -> int:
             landing_dir = EXCLUDED.landing_dir,
             ingest_mode = EXCLUDED.ingest_mode,
             indicators  = EXCLUDED.indicators,
-            options     = EXCLUDED.options || cdm.data_sources.options;
+            options     = EXCLUDED.options || cdm.data_sources.options
+        WHERE cdm.data_sources.publisher_id IS NULL;
     """)
 
     seeded_count = 0
